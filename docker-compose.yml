@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pulsedesk-postgres
+    environment:
+      POSTGRES_DB: pulsedesk
+      POSTGRES_USER: pulsedesk
+      POSTGRES_PASSWORD: pulsedesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - pulsedesk_pgdata:/var/lib/postgresql/data
+
+volumes:
+  pulsedesk_pgdata:

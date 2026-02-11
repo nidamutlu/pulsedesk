@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: pulsedesk-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/pulsedesk
+    username: pulsedesk
+    password: pulsedesk
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  liquibase:
+    enabled: true
+    change-log: classpath:db/db.changelog-master.yaml
+
+server:
+  port: 8080
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,info
