@@ -1,3 +1,4 @@
 databaseChangeLog:
   - include:
-      file: db/changelog/001-create-ticket-table.yaml
+      file: 001-create-ticket-table.yaml
+      relativeToChangelogFile: true
