@@ -1,10 +1,9 @@
-package com.pulsedesk.backend;
+package com.pulsedesk;
 
-import com.BackendApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest(classes = BackendApplication.class)
+@SpringBootTest
 class BackendApplicationTests {
 
 	@Test

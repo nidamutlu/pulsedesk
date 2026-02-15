@@ -60,7 +60,7 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
-    <!-- PostgreSQL -->
+    <!-- PostgreSQL Driver -->
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
@@ -98,6 +98,3 @@
   </build>
 
 </project>
-
-
-
