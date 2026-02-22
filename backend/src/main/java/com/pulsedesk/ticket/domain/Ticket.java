@@ -99,6 +99,7 @@ public class Ticket {
                               TicketPriority priority,
                               Long assigneeId,
                               OffsetDateTime updatedAt) {
+
         this.title = title;
         this.description = description;
         this.priority = priority;
@@ -106,3 +107,4 @@ public class Ticket {
         this.updatedAt = updatedAt;
     }
 }
+

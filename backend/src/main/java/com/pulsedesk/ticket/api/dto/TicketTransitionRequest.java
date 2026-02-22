@@ -1,20 +1,18 @@
 package com.pulsedesk.ticket.api.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.pulsedesk.ticket.domain.TicketStatus;
+import jakarta.validation.constraints.NotNull;
 
 public class TicketTransitionRequest {
 
-    @NotBlank(message = "transition is required")
-    private String transition;
+    @NotNull(message = "targetStatus is required")
+    private TicketStatus targetStatus;
 
-    public TicketTransitionRequest() {
+    public TicketStatus getTargetStatus() {
+        return targetStatus;
     }
 
-    public String getTransition() {
-        return transition;
-    }
-
-    public void setTransition(String transition) {
-        this.transition = transition;
+    public void setTargetStatus(TicketStatus targetStatus) {
+        this.targetStatus = targetStatus;
     }
 }

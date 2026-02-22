@@ -13,3 +13,4 @@ public class TicketNotFoundException extends RuntimeException {
         return ticketId;
     }
 }
+

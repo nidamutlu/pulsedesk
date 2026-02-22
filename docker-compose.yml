@@ -11,5 +11,19 @@ services:
     volumes:
       - pulsedesk_pgdata:/var/lib/postgresql/data
 
+  backend:
+    build:
+      context: ./backend
+    container_name: pulsedesk-backend
+    depends_on:
+      - postgres
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/pulsedesk
+      DB_USER: pulsedesk
+      DB_PASS: pulsedesk
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"
+
 volumes:
   pulsedesk_pgdata:

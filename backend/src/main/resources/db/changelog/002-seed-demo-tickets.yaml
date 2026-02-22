@@ -1,6 +1,286 @@
 databaseChangeLog:
   - changeSet:
-      id: 0
-      author: admin
+      id: 002-seed-demo-tickets
+      author: nida
+      context: dev
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "select count(*) from tickets"
       changes:
-        -
+
+        # =========================================================
+        # OPEN (5) - Yeni gelen, henüz alınmamış / triage bekleyen
+        # =========================================================
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "VPN connection fails intermittently" }
+              - column: { name: description, value: "Remote users report VPN drops every 10–15 minutes across different networks. Needs triage + logs." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-15T06:10:00Z" }
+              - column: { name: updated_at, value: "2026-02-15T06:10:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Password reset email not received" }
+              - column: { name: description, value: "Reset flow completes but user does not receive the email. Check SMTP/template configuration and spam policies." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 102 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-16T07:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-16T07:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Android app crashes on launch" }
+              - column: { name: description, value: "App crashes immediately on multiple devices. Need crash logs + last release diff." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 103 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-18T05:40:00Z" }
+              - column: { name: updated_at, value: "2026-02-18T05:40:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "User cannot upload profile picture" }
+              - column: { name: description, value: "Uploads fail with 413/timeout on some networks. Verify reverse-proxy limits and request size." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 104 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-18T09:10:00Z" }
+              - column: { name: updated_at, value: "2026-02-18T09:10:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Dashboard loads slowly after login" }
+              - column: { name: description, value: "Dashboard takes 8–12 seconds after login. No UI error; likely API latency or heavy queries." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "LOW" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-16T08:30:00Z" }
+              - column: { name: updated_at, value: "2026-02-16T08:30:00Z" }
+
+        # =========================================================
+        # IN_PROGRESS (6) - Üzerinde çalışılıyor (assignee var)
+        # =========================================================
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Office Wi-Fi drops frequently" }
+              - column: { name: description, value: "Multiple users report Wi-Fi drops. Investigating access point logs and channel interference." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 102 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-17T06:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-18T06:30:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Order API timeouts under load" }
+              - column: { name: description, value: "Timeouts during peak usage. Profiling upstream dependencies and DB query performance." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-13T07:20:00Z" }
+              - column: { name: updated_at, value: "2026-02-14T13:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Server disk usage critically high" }
+              - column: { name: description, value: "Disk usage exceeded 95% on /var. Identifying large files and improving log rotation." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 103 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-13T06:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-13T09:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "CI pipeline fails during frontend build" }
+              - column: { name: description, value: "CI fails at frontend build stage. Reviewing dependency versions and TS compilation logs." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 104 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-14T06:10:00Z" }
+              - column: { name: updated_at, value: "2026-02-15T08:45:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Add new instance to load balancer pool" }
+              - column: { name: description, value: "New instance is ready but not receiving traffic. Registering it in target group + health checks." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "LOW" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-12T12:30:00Z" }
+              - column: { name: updated_at, value: "2026-02-13T06:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Request firewall rule for new service" }
+              - column: { name: description, value: "Inbound access needed on a port range. Validating requirements and preparing change window." }
+              - column: { name: status, value: "IN_PROGRESS" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 102 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-14T11:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-15T06:30:00Z" }
+
+        # =========================================================
+        # WAITING_CUSTOMER (4) - Müşteriden bilgi/onay bekleniyor
+        # =========================================================
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Need user-provided logs to continue investigation" }
+              - column: { name: description, value: "Waiting for logs (09:00–10:30). Without logs root cause cannot be confirmed." }
+              - column: { name: status, value: "WAITING_CUSTOMER" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-11T07:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-12T06:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Awaiting screenshot of the error message" }
+              - column: { name: description, value: "Waiting for screenshot showing exact error text and URL where it occurs." }
+              - column: { name: status, value: "WAITING_CUSTOMER" }
+              - column: { name: priority, value: "LOW" }
+              - column: { name: requester_id, valueNumeric: 102 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-10T10:30:00Z" }
+              - column: { name: updated_at, value: "2026-02-11T07:10:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Need clarification on permissions and role scope" }
+              - column: { name: description, value: "Waiting for role/team confirmation. Access mismatch cannot be validated without this info." }
+              - column: { name: status, value: "WAITING_CUSTOMER" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 103 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-12T08:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-13T05:30:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Approval required to proceed with change" }
+              - column: { name: description, value: "Waiting for requester approval on maintenance window + impact acknowledgement before applying change." }
+              - column: { name: status, value: "WAITING_CUSTOMER" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 104 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-15T09:10:00Z" }
+              - column: { name: updated_at, value: "2026-02-16T09:15:00Z" }
+
+        # =========================================================
+        # RESOLVED (4) - Çözüm uygulanmış; kapanış / geri dönüş senaryosu var
+        # =========================================================
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "DNS configuration corrected for internal domain" }
+              - column: { name: description, value: "Fix deployed; awaiting requester confirmation. If requester replies 'still broken', it should transition back to IN_PROGRESS." }
+              - column: { name: status, value: "RESOLVED" }
+              - column: { name: priority, value: "HIGH" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-08T06:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-08T08:30:00Z" }
+              - column: { name: resolved_at, value: "2026-02-08T08:30:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Cache cleared to resolve stale data issue" }
+              - column: { name: description, value: "Stale cache entries cleared; data consistent. Monitoring for recurrence." }
+              - column: { name: status, value: "RESOLVED" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 102 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-09T07:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-09T11:00:00Z" }
+              - column: { name: resolved_at, value: "2026-02-09T11:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Database index added for slow query" }
+              - column: { name: description, value: "Index added on frequently filtered columns; latency improved. Awaiting business validation." }
+              - column: { name: status, value: "RESOLVED" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 103 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-06T06:30:00Z" }
+              - column: { name: updated_at, value: "2026-02-06T08:00:00Z" }
+              - column: { name: resolved_at, value: "2026-02-06T08:00:00Z" }
+
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "UI button click handler fixed" }
+              - column: { name: description, value: "Primary action button handler fixed and deployed; QA verified. Awaiting user confirmation." }
+              - column: { name: status, value: "RESOLVED" }
+              - column: { name: priority, value: "LOW" }
+              - column: { name: requester_id, valueNumeric: 104 }
+              - column: { name: assignee_id, valueNumeric: 202 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-08T11:20:00Z" }
+              - column: { name: updated_at, value: "2026-02-08T12:00:00Z" }
+              - column: { name: resolved_at, value: "2026-02-08T12:00:00Z" }
+
+        # =========================================================
+        # CLOSED (1) - Müşteri onayı geldi, kesin kapanış
+        # =========================================================
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Issue confirmed resolved by requester" }
+              - column: { name: description, value: "Requester confirmed the fix works and no further action is required. Closing ticket." }
+              - column: { name: status, value: "CLOSED" }
+              - column: { name: priority, value: "LOW" }
+              - column: { name: requester_id, valueNumeric: 101 }
+              - column: { name: assignee_id, valueNumeric: 201 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-04T12:00:00Z" }
+              - column: { name: updated_at, value: "2026-02-04T13:00:00Z" }
+              - column: { name: resolved_at, value: "2026-02-04T13:00:00Z" }

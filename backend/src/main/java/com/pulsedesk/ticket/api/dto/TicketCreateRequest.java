@@ -1,5 +1,6 @@
 package com.pulsedesk.ticket.api.dto;
 
+import com.pulsedesk.ticket.domain.TicketPriority;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -15,8 +16,8 @@ public class TicketCreateRequest {
     @NotBlank(message = "description is required")
     private String description;
 
-    @NotBlank(message = "priority is required")
-    private String priority;
+    @NotNull(message = "priority is required")
+    private TicketPriority priority;
 
     @NotNull(message = "requesterId is required")
     private Long requesterId;
@@ -24,9 +25,13 @@ public class TicketCreateRequest {
     @NotNull(message = "teamId is required")
     private Long teamId;
 
-    // Required for deserialization
-    public TicketCreateRequest() {
+    /**
+     * Required by Jackson for JSON deserialization.
+     */
+    protected TicketCreateRequest() {
     }
+
+    /* Getters */
 
     public String getTitle() {
         return title;
@@ -36,7 +41,7 @@ public class TicketCreateRequest {
         return description;
     }
 
-    public String getPriority() {
+    public TicketPriority getPriority() {
         return priority;
     }
 

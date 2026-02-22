@@ -2,3 +2,7 @@ databaseChangeLog:
   - include:
       file: 001-create-ticket-table.yaml
       relativeToChangelogFile: true
+
+  - include:
+      file: 002-seed-demo-tickets.yaml
+      relativeToChangelogFile: true

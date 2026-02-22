@@ -9,16 +9,26 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 public class SecurityConfig {
 
+    private static final String[] PUBLIC_ENDPOINTS = {
+            "/actuator/health",
+            "/actuator/info",
+            "/error"
+    };
+
+    private static final String[] DEV_PUBLIC_ENDPOINTS = {
+            "/tickets/**"
+    };
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
+        return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/tickets/**", "/error").permitAll()
+                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers(DEV_PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
-                .httpBasic(Customizer.withDefaults());
-
-        return http.build();
+                .httpBasic(Customizer.withDefaults())
+                .build();
     }
 }
