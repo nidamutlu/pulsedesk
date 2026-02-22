@@ -1,5 +1,6 @@
 package com.pulsedesk.ticket.api;
 
+import com.pulsedesk.common.api.ApiError;
 import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.exception.TicketTransitionInvalidException;
 import org.springframework.http.HttpStatus;
@@ -85,3 +86,4 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("BAD_REQUEST", "Malformed JSON request body", null));
     }
 }
+
