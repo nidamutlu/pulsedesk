@@ -6,3 +6,7 @@ databaseChangeLog:
   - include:
       file: 002-seed-demo-tickets.yaml
       relativeToChangelogFile: true
+
+  - include:
+      file: 003-create-ticket-audit-logs.yaml
+      relativeToChangelogFile: true

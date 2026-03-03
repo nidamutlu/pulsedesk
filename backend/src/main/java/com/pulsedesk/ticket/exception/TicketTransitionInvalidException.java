@@ -1,5 +1,8 @@
 package com.pulsedesk.ticket.exception;
 
+import lombok.Getter;
+
+@Getter
 public class TicketTransitionInvalidException extends RuntimeException {
 
     private final Long ticketId;
@@ -9,13 +12,5 @@ public class TicketTransitionInvalidException extends RuntimeException {
         super("Invalid transition: " + transition);
         this.ticketId = ticketId;
         this.transition = transition;
-    }
-
-    public Long getTicketId() {
-        return ticketId;
-    }
-
-    public String getTransition() {
-        return transition;
     }
 }

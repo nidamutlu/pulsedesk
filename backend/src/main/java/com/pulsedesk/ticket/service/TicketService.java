@@ -1,15 +1,17 @@
 package com.pulsedesk.ticket.service;
 
-import com.pulsedesk.ticket.api.dto.TicketCreateRequest;
+import com.pulsedesk.ticket.api.dto.TicketRequest;
 import com.pulsedesk.ticket.api.dto.TicketResponse;
-import com.pulsedesk.ticket.api.dto.TicketUpdateRequest;
 import com.pulsedesk.ticket.domain.Ticket;
+import com.pulsedesk.ticket.domain.TicketAuditLog;
 import com.pulsedesk.ticket.domain.TicketPriority;
 import com.pulsedesk.ticket.domain.TicketStatus;
 import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.exception.TicketTransitionInvalidException;
-import com.pulsedesk.ticket.repo.TicketRepository;
-import com.pulsedesk.ticket.repo.TicketSpecifications;
+import com.pulsedesk.ticket.repository.TicketAuditLogRepository;
+import com.pulsedesk.ticket.repository.TicketRepository;
+import com.pulsedesk.ticket.repository.TicketSpecifications;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -20,15 +22,13 @@ import java.time.OffsetDateTime;
 
 @Service
 @Transactional
+@RequiredArgsConstructor
 public class TicketService {
 
     private final TicketRepository ticketRepository;
+    private final TicketAuditLogRepository auditLogRepository;
 
-    public TicketService(TicketRepository ticketRepository) {
-        this.ticketRepository = ticketRepository;
-    }
-
-    public TicketResponse createTicket(TicketCreateRequest request) {
+    public TicketResponse createTicket(TicketRequest request) {
         requireNonBlank(request.getTitle(), "title is required");
         requireNonBlank(request.getDescription(), "description is required");
         requireNonNull(request.getPriority(), "priority is required");
@@ -48,7 +48,12 @@ public class TicketService {
         ticket.setCreatedAt(now);
         ticket.setUpdatedAt(now);
 
-        return TicketResponse.from(ticketRepository.save(ticket));
+        if (request.getAssigneeId() != null) {
+            ticket.setAssigneeId(request.getAssigneeId());
+        }
+
+        Ticket saved = ticketRepository.save(ticket);
+        return TicketResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -80,9 +85,15 @@ public class TicketService {
         return TicketResponse.from(ticket);
     }
 
-    public TicketResponse updateTicket(Long id, TicketUpdateRequest request) {
+    public TicketResponse updateTicket(Long id, TicketRequest request) {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new TicketNotFoundException(id));
+
+        if (request.getStatus() != null) {
+            throw new IllegalArgumentException(
+                    "Status updates are not allowed via PATCH. Use /tickets/{id}/transition."
+            );
+        }
 
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -103,35 +114,42 @@ public class TicketService {
             newPriority = request.getPriority();
         }
 
-        Long newAssigneeId = ticket.getAssigneeId();
+        Long oldAssigneeId = ticket.getAssigneeId();
+        Long newAssigneeId = oldAssigneeId;
         if (request.getAssigneeId() != null) {
             newAssigneeId = request.getAssigneeId();
+            ticket.setAssigneeId(newAssigneeId);
         }
 
         ticket.updateDetails(
                 newTitle,
                 newDescription,
                 newPriority,
-                newAssigneeId,
+                ticket.getAssigneeId(),
                 now
         );
 
-        return TicketResponse.from(ticketRepository.save(ticket));
+        Ticket saved = ticketRepository.save(ticket);
+
+        return TicketResponse.from(saved);
     }
 
     public TicketResponse transitionTicket(Long id, TicketStatus targetStatus) {
-        requireNonNull(targetStatus, "targetStatus is required");
+        requireNonNull(targetStatus, "toStatus is required");
 
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new TicketNotFoundException(id));
 
-        TicketStatus current = ticket.getStatus();
-        if (current == targetStatus) {
+        TicketStatus from = ticket.getStatus();
+        if (from == targetStatus) {
             return TicketResponse.from(ticket);
         }
 
-        if (!isTransitionAllowed(current, targetStatus)) {
-            throw new TicketTransitionInvalidException(id, targetStatus.name());
+        if (!isTransitionAllowed(from, targetStatus)) {
+            throw new TicketTransitionInvalidException(
+                    id,
+                    from.name() + " -> " + targetStatus.name()
+            );
         }
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -140,11 +158,15 @@ public class TicketService {
 
         if (targetStatus == TicketStatus.RESOLVED) {
             ticket.setResolvedAt(now);
-        } else if (current == TicketStatus.RESOLVED && targetStatus == TicketStatus.IN_PROGRESS) {
+        } else if (from == TicketStatus.RESOLVED) {
             ticket.setResolvedAt(null);
         }
 
-        return TicketResponse.from(ticketRepository.save(ticket));
+        Ticket saved = ticketRepository.save(ticket);
+
+        auditLogRepository.save(TicketAuditLog.statusChange(saved.getId(), from, targetStatus, 1L));
+
+        return TicketResponse.from(saved);
     }
 
     private boolean isTransitionAllowed(TicketStatus from, TicketStatus to) {
@@ -157,13 +179,13 @@ public class TicketService {
         };
     }
 
-    private void requireNonBlank(String value, String message) {
+    private static void requireNonBlank(String value, String message) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(message);
         }
     }
 
-    private void requireNonNull(Object value, String message) {
+    private static void requireNonNull(Object value, String message) {
         if (value == null) {
             throw new IllegalArgumentException(message);
         }

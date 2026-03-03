@@ -3,12 +3,13 @@ package com.pulsedesk.ticket.api.dto;
 import com.pulsedesk.ticket.domain.Ticket;
 import com.pulsedesk.ticket.domain.TicketPriority;
 import com.pulsedesk.ticket.domain.TicketStatus;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
 
-/**
- * Response DTO returned by Ticket endpoints.
- */
+@Getter
+@NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
 public class TicketResponse {
 
     private Long id;
@@ -23,11 +24,6 @@ public class TicketResponse {
     private OffsetDateTime updatedAt;
     private OffsetDateTime resolvedAt;
 
-    private TicketResponse() {
-        // use factory method
-    }
-
-    /** Creates a TicketResponse from a Ticket entity. */
     public static TicketResponse from(Ticket ticket) {
         TicketResponse response = new TicketResponse();
         response.id = ticket.getId();
@@ -42,51 +38,5 @@ public class TicketResponse {
         response.updatedAt = ticket.getUpdatedAt();
         response.resolvedAt = ticket.getResolvedAt();
         return response;
-    }
-
-    /* Getters */
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public TicketStatus getStatus() {
-        return status;
-    }
-
-    public TicketPriority getPriority() {
-        return priority;
-    }
-
-    public Long getRequesterId() {
-        return requesterId;
-    }
-
-    public Long getAssigneeId() {
-        return assigneeId;
-    }
-
-    public Long getTeamId() {
-        return teamId;
-    }
-
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public OffsetDateTime getResolvedAt() {
-        return resolvedAt;
     }
 }

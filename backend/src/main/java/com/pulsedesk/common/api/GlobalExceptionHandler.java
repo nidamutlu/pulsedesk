@@ -20,31 +20,32 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // -------- Domain errors --------
+
     /** 404 - Ticket not found */
     @ExceptionHandler(TicketNotFoundException.class)
     public ResponseEntity<ApiError> handleTicketNotFound(TicketNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ApiError(
-                        "TICKET_NOT_FOUND",
-                        ex.getMessage(),
-                        Map.of("ticketId", ex.getTicketId())
-                ));
+        return build(HttpStatus.NOT_FOUND, ApiError.of(
+                "TICKET_NOT_FOUND",
+                ex.getMessage(),
+                Map.of("ticketId", ex.getTicketId())
+        ));
     }
 
     /** 409 - Invalid workflow transition */
     @ExceptionHandler(TicketTransitionInvalidException.class)
     public ResponseEntity<ApiError> handleTransitionInvalid(TicketTransitionInvalidException ex) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("ticketId", ex.getTicketId());
-        details.put("transition", ex.getTransition());
-
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ApiError(
-                        "TICKET_TRANSITION_INVALID",
-                        ex.getMessage(),
-                        details
-                ));
+        return build(HttpStatus.CONFLICT, ApiError.of(
+                "TICKET_TRANSITION_INVALID",
+                ex.getMessage(),
+                Map.of(
+                        "ticketId", ex.getTicketId(),
+                        "transition", ex.getTransition()
+                )
+        ));
     }
+
+    // -------- Validation / request errors --------
 
     /** 400 - Bean validation failed */
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -59,23 +60,20 @@ public class GlobalExceptionHandler {
             fieldErrors.merge(fe.getField(), message, (a, b) -> a + "; " + b);
         }
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError(
-                        "VALIDATION_ERROR",
-                        "Validation failed",
-                        fieldErrors
-                ));
+        return build(HttpStatus.BAD_REQUEST, ApiError.of(
+                "VALIDATION_ERROR",
+                "Validation failed",
+                fieldErrors
+        ));
     }
 
     /** 400 - Invalid input */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError(
-                        "BAD_REQUEST",
-                        ex.getMessage(),
-                        null
-                ));
+        return build(HttpStatus.BAD_REQUEST, ApiError.of(
+                "INVALID_REQUEST",
+                ex.getMessage()
+        ));
     }
 
     /** 400 - Malformed JSON / wrong enum value */
@@ -83,10 +81,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleUnreadableBody(HttpMessageNotReadableException ex) {
         Throwable root = rootCause(ex);
 
-        if (root instanceof InvalidFormatException ife
-                && ife.getTargetType() != null
-                && ife.getTargetType().isEnum()) {
-
+        if (root instanceof InvalidFormatException ife && isEnumTarget(ife)) {
             String field = lastFieldName(ife.getPath());
 
             Map<String, Object> details = new LinkedHashMap<>();
@@ -94,23 +89,28 @@ public class GlobalExceptionHandler {
             details.put("rejectedValue", ife.getValue());
             details.put("allowedValues", enumValues(ife.getTargetType()));
 
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ApiError(
-                            "INVALID_ENUM_VALUE",
-                            "Invalid value for '" + field + "'",
-                            details
-                    ));
+            return build(HttpStatus.BAD_REQUEST, ApiError.of(
+                    "INVALID_ENUM_VALUE",
+                    "Invalid value for '" + field + "'",
+                    details
+            ));
         }
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError(
-                        "BAD_REQUEST",
-                        "Malformed JSON request body",
-                        null
-                ));
+        return build(HttpStatus.BAD_REQUEST, ApiError.of(
+                "MALFORMED_JSON",
+                "Malformed JSON request body"
+        ));
     }
 
     // -------- Helpers --------
+
+    private static ResponseEntity<ApiError> build(HttpStatus status, ApiError body) {
+        return ResponseEntity.status(status).body(body);
+    }
+
+    private static boolean isEnumTarget(InvalidFormatException ife) {
+        return ife.getTargetType() != null && ife.getTargetType().isEnum();
+    }
 
     private static Throwable rootCause(Throwable t) {
         Throwable current = t;
@@ -122,8 +122,13 @@ public class GlobalExceptionHandler {
 
     private static String lastFieldName(List<JsonMappingException.Reference> path) {
         if (path == null || path.isEmpty()) return "unknown";
-        String name = path.get(path.size() - 1).getFieldName();
-        return (name == null || name.isBlank()) ? "unknown" : name;
+
+        JsonMappingException.Reference last = path.get(path.size() - 1);
+        String name = last.getFieldName();
+        if (name != null && !name.isBlank()) return name;
+
+        int index = last.getIndex();
+        return (index >= 0) ? "[" + index + "]" : "unknown";
     }
 
     private static List<String> enumValues(Class<?> enumType) {

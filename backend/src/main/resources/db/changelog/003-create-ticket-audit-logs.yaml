@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-ticket-audit-logs
+      author: pulsedesk
+      changes:
+        - createTable:
+            tableName: ticket_audit_logs
+            columns:
+              - column:
+                  name: id
+                  type: bigserial
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: ticket_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: action
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: old_status
+                  type: varchar(50)
+              - column:
+                  name: new_status
+                  type: varchar(50)
+              - column:
+                  name: old_assignee_id
+                  type: bigint
+              - column:
+                  name: new_assignee_id
+                  type: bigint
+              - column:
+                  name: actor_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            tableName: ticket_audit_logs
+            indexName: idx_ticket_audit_logs_ticket_id
+            columns:
+              - column:
+                  name: ticket_id

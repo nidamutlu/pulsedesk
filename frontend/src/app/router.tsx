@@ -1,5 +1,11 @@
-import { Navigate, Outlet, createBrowserRouter } from "react-router-dom";
-import { Link } from "react-router-dom";
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Outlet,
+  createBrowserRouter,
+  useLocation,
+} from "react-router-dom";
 
 import LoginPage from "../pages/Login/LoginPage";
 import DashboardPage from "../pages/Dashboard/DashboardPage";
@@ -8,7 +14,15 @@ import TicketCreatePage from "../pages/Tickets/TicketCreatePage";
 import TicketDetailPage from "../pages/TicketDetail/TicketDetailPage";
 import NotificationsPage from "../pages/Notifications/NotificationsPage";
 
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
 function AppLayout() {
+  const loc = useLocation();
+  const isTicketsArea = loc.pathname.startsWith("/tickets");
+  const isCreateTicket = loc.pathname === "/tickets/new";
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -17,25 +31,60 @@ function AppLayout() {
             <Link to="/dashboard" className="text-sm font-semibold text-slate-900">
               PulseDesk
             </Link>
+
             <nav className="flex items-center gap-3 text-sm">
-              <Link to="/dashboard" className="text-slate-600 hover:text-slate-900">
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) =>
+                  cx(
+                    "rounded-lg px-2 py-1",
+                    isActive
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-600 hover:text-slate-900"
+                  )
+                }
+              >
                 Dashboard
-              </Link>
-              <Link to="/tickets" className="text-slate-600 hover:text-slate-900">
+              </NavLink>
+
+              <NavLink
+                to="/tickets"
+                className={({ isActive }) =>
+                  cx(
+                    "rounded-lg px-2 py-1",
+                    isActive
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-600 hover:text-slate-900"
+                  )
+                }
+              >
                 Tickets
-              </Link>
-              <Link to="/notifications" className="text-slate-600 hover:text-slate-900">
+              </NavLink>
+
+              <NavLink
+                to="/notifications"
+                className={({ isActive }) =>
+                  cx(
+                    "rounded-lg px-2 py-1",
+                    isActive
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-600 hover:text-slate-900"
+                  )
+                }
+              >
                 Notifications
-              </Link>
+              </NavLink>
             </nav>
           </div>
 
-          <Link
-            to="/tickets/new"
-            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            + New Ticket
-          </Link>
+          {isTicketsArea && !isCreateTicket && (
+            <Link
+              to="/tickets/new"
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              + New Ticket
+            </Link>
+          )}
         </div>
       </header>
 
@@ -79,10 +128,8 @@ function NotFoundPage() {
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/dashboard" replace /> },
 
-  // Public
   { path: "/login", element: <LoginPage /> },
 
-  // App (with shared layout)
   {
     path: "/",
     element: <AppLayout />,

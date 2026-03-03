@@ -18,10 +18,10 @@ services:
     depends_on:
       - postgres
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/pulsedesk
-      DB_USER: pulsedesk
-      DB_PASS: pulsedesk
       SERVER_PORT: "8080"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pulsedesk
+      SPRING_DATASOURCE_USERNAME: pulsedesk
+      SPRING_DATASOURCE_PASSWORD: pulsedesk
     ports:
       - "8080:8080"
 

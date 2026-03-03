@@ -1,5 +1,8 @@
 package com.pulsedesk.ticket.exception;
 
+import lombok.Getter;
+
+@Getter
 public class TicketNotFoundException extends RuntimeException {
 
     private final Long ticketId;
@@ -8,9 +11,4 @@ public class TicketNotFoundException extends RuntimeException {
         super("Ticket not found: " + ticketId);
         this.ticketId = ticketId;
     }
-
-    public Long getTicketId() {
-        return ticketId;
-    }
 }
-
