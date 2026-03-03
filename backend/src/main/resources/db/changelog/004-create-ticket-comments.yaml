@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-ticket-comments
+      author: pulsedesk
+      changes:
+        - createTable:
+            tableName: ticket_comments
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+
+              - column:
+                  name: ticket_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: author_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: body
+                  type: TEXT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: ticket_comments
+            baseColumnNames: ticket_id
+            referencedTableName: tickets
+            referencedColumnNames: id
+            constraintName: fk_ticket_comments_ticket
+
+        - createIndex:
+            tableName: ticket_comments
+            indexName: idx_ticket_comments_ticket_id
+            columns:
+              - column:
+                  name: ticket_id

@@ -2,11 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ApiRequestError,
+  createTicketComment,
   fetchTicketAuditLogs,
   fetchTicketById,
+  fetchTicketComments,
   transitionTicket,
 } from "../../api/tickets";
-import type { Ticket, TicketAuditLog, TicketStatus } from "../../api/tickets";
+import type {
+  Ticket,
+  TicketAuditLog,
+  TicketComment,
+  TicketStatus,
+} from "../../api/tickets";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -30,7 +37,6 @@ function actorLabel(actorId: number) {
   if (!Number.isFinite(actorId) || actorId <= 0) return "System";
   return `Actor #${actorId}`;
 }
-
 
 function IconStatusChange({ className }: { className?: string }) {
   return (
@@ -128,7 +134,6 @@ function activityMeta(action: string) {
   };
 }
 
-
 function Badge({
   kind,
   value,
@@ -224,7 +229,8 @@ function auditLineText(l: TicketAuditLog) {
   }
 
   if (l.action === "ASSIGNEE_CHANGE") {
-    const from = l.oldAssigneeId === null ? "Unassigned" : String(l.oldAssigneeId);
+    const from =
+      l.oldAssigneeId === null ? "Unassigned" : String(l.oldAssigneeId);
     const to = l.newAssigneeId === null ? "Unassigned" : String(l.newAssigneeId);
     return `Assignee: ${from} → ${to}`;
   }
@@ -239,6 +245,15 @@ function sortAuditNewestFirst(logs: TicketAuditLog[]) {
     if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
     return tb - ta;
   });
+}
+
+function isInvalidTransitionError(e: ApiRequestError) {
+  const payloadCode = e.payload?.code;
+  return (
+    e.status === 409 ||
+    e.code === "TICKET_TRANSITION_INVALID" ||
+    payloadCode === "TICKET_TRANSITION_INVALID"
+  );
 }
 
 export default function TicketDetailPage() {
@@ -258,6 +273,14 @@ export default function TicketDetailPage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<TicketAuditLog[] | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
+
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [comments, setComments] = useState<TicketComment[] | null>(null);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+
+  const [commentBody, setCommentBody] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
+  const [commentSaveError, setCommentSaveError] = useState<string | null>(null);
 
   const [isTransitionOpen, setIsTransitionOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<TicketStatus | "">("");
@@ -289,6 +312,23 @@ export default function TicketDetailPage() {
     }
   }, []);
 
+  const loadComments = useCallback(async (idNum: number) => {
+    setCommentsError(null);
+    setCommentsLoading(true);
+
+    try {
+      const list = await fetchTicketComments(idNum);
+      if (!mountedRef.current) return;
+      setComments(list);
+    } catch (e: unknown) {
+      if (!mountedRef.current) return;
+      if (e instanceof ApiRequestError) setCommentsError(buildApiErrorMessage(e));
+      else setCommentsError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current) setCommentsLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setTicket(null);
     setNotFound(false);
@@ -296,6 +336,9 @@ export default function TicketDetailPage() {
 
     setAuditLogs(null);
     setAuditError(null);
+
+    setComments(null);
+    setCommentsError(null);
 
     if (ticketId === null) {
       setLoading(false);
@@ -311,11 +354,16 @@ export default function TicketDetailPage() {
 
       setTicket(t);
       void loadAudit(t.id);
+      void loadComments(t.id);
     } catch (e: unknown) {
       if (!mountedRef.current) return;
 
       if (e instanceof ApiRequestError) {
-        if (e.status === 404 || e.code === "NOT_FOUND") {
+        if (
+          e.status === 404 ||
+          e.code === "NOT_FOUND" ||
+          e.payload?.code === "NOT_FOUND"
+        ) {
           setNotFound(true);
           return;
         }
@@ -327,7 +375,7 @@ export default function TicketDetailPage() {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [ticketId, loadAudit]);
+  }, [ticketId, loadAudit, loadComments]);
 
   useEffect(() => {
     void load();
@@ -369,25 +417,29 @@ export default function TicketDetailPage() {
     setTransitionError(null);
 
     try {
-      const updated = await transitionTicket(ticketId, nextStatus);
+      await transitionTicket(ticketId, nextStatus);
       if (!mountedRef.current) return;
 
-      setTicket(updated);
-      setIsTransitionOpen(false);
+      const fresh = await fetchTicketById(ticketId);
+      if (!mountedRef.current) return;
 
-      void loadAudit(updated.id);
+      setTicket(fresh);
+      setIsTransitionOpen(false);
+      setNextStatus("");
+
+      void loadAudit(fresh.id);
     } catch (e: unknown) {
       if (!mountedRef.current) return;
 
       if (e instanceof ApiRequestError) {
-        if (e.status === 409 || e.code === "CONFLICT") {
+        if (isInvalidTransitionError(e)) {
           setTransitionError(
             e.payload?.message ||
               "This status transition is not allowed for the current ticket."
           );
-        } else {
-          setTransitionError(buildApiErrorMessage(e));
+          return;
         }
+        setTransitionError(buildApiErrorMessage(e));
         return;
       }
 
@@ -396,6 +448,34 @@ export default function TicketDetailPage() {
       if (mountedRef.current) setTransitionSaving(false);
     }
   }, [ticket, ticketId, nextStatus, loadAudit]);
+
+  const submitComment = useCallback(async () => {
+    if (!ticket || ticketId === null) return;
+
+    const body = commentBody.trim();
+    if (!body) {
+      setCommentSaveError("Please write a comment.");
+      return;
+    }
+
+    setCommentSaving(true);
+    setCommentSaveError(null);
+
+    try {
+      await createTicketComment(ticketId, body, 1);
+      if (!mountedRef.current) return;
+
+      setCommentBody("");
+      void loadComments(ticketId);
+    } catch (e: unknown) {
+      if (!mountedRef.current) return;
+
+      if (e instanceof ApiRequestError) setCommentSaveError(buildApiErrorMessage(e));
+      else setCommentSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current) setCommentSaving(false);
+    }
+  }, [ticket, ticketId, commentBody, loadComments]);
 
   if (notFound) {
     return (
@@ -640,24 +720,98 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
+            {/* ---------- Comments ---------- */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">Comments</div>
-              <div className="mt-2 text-sm text-slate-600">
-                Coming soon: add comment + mention (@username) + notifications.
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-slate-900">Comments</div>
+
+                <button
+                  type="button"
+                  onClick={() => (t ? void loadComments(t.id) : undefined)}
+                  disabled={!t || commentsLoading || commentSaving}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {commentsLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <textarea
+                  value={commentBody}
+                  onChange={(e) => setCommentBody(e.target.value)}
+                  disabled={!t || commentSaving}
+                  rows={3}
+                  placeholder="Write a comment… (use @username to mention)"
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 disabled:opacity-60"
+                />
+
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="text-xs text-slate-500">
+                    {commentBody.trim().length}/5000
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={submitComment}
+                    disabled={!t || commentSaving || !commentBody.trim()}
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {commentSaving ? "Posting..." : "Post comment"}
+                  </button>
+                </div>
+
+                {commentSaveError && (
+                  <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                    {commentSaveError}
+                  </div>
+                )}
+
+                <div className="mt-5">
+                  {commentsError ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                      {commentsError}
+                    </div>
+                  ) : !comments || comments.length === 0 ? (
+                    <div className="text-sm text-slate-600">
+                      {commentsLoading ? "Loading comments..." : "No comments yet."}
+                    </div>
+                  ) : (
+                    <ul className="space-y-3">
+                      {comments.map((c) => (
+                        <li
+                          key={c.id}
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-900">
+                                {actorLabel(c.authorId)}
+                              </div>
+                              <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
+                                {c.body}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-xs font-medium text-slate-500">
+                              {formatDateTime(c.createdAt)}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* ---------- Activity (timeline UI) ---------- */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-900">
-                  Activity
-                </div>
+                <div className="text-sm font-semibold text-slate-900">Activity</div>
 
                 <button
                   type="button"
                   onClick={() => (t ? void loadAudit(t.id) : undefined)}
-                  disabled={!t || auditLoading}
+                  disabled={!t || auditLoading || transitionSaving}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {auditLoading ? "Refreshing..." : "Refresh"}
@@ -675,7 +829,6 @@ export default function TicketDetailPage() {
                   </div>
                 ) : (
                   <ul className="relative space-y-4">
-                    {/* vertical line */}
                     <div className="pointer-events-none absolute left-[11px] top-2 bottom-2 w-px bg-slate-200" />
 
                     {auditLogs.map((l, idx) => {
@@ -685,7 +838,6 @@ export default function TicketDetailPage() {
 
                       return (
                         <li key={l.id} className="relative pl-8">
-                          {/* dot + icon */}
                           <div
                             className={cx(
                               "absolute left-0 top-3 grid h-6 w-6 place-items-center rounded-full border",
@@ -754,13 +906,7 @@ export default function TicketDetailPage() {
                 />
                 <DetailItem
                   label="Requester ID"
-                  value={
-                    loading || !t ? (
-                      <Skeleton className="h-5 w-16" />
-                    ) : (
-                      t.requesterId
-                    )
-                  }
+                  value={loading || !t ? <Skeleton className="h-5 w-16" /> : t.requesterId}
                 />
                 <DetailItem
                   label="Assignee ID"
@@ -783,23 +929,11 @@ export default function TicketDetailPage() {
 
                 <DetailItem
                   label="Created At"
-                  value={
-                    loading || !t ? (
-                      <Skeleton className="h-5 w-40" />
-                    ) : (
-                      formatDateTime(t.createdAt)
-                    )
-                  }
+                  value={loading || !t ? <Skeleton className="h-5 w-40" /> : formatDateTime(t.createdAt)}
                 />
                 <DetailItem
                   label="Updated At"
-                  value={
-                    loading || !t ? (
-                      <Skeleton className="h-5 w-40" />
-                    ) : (
-                      formatDateTime(t.updatedAt)
-                    )
-                  }
+                  value={loading || !t ? <Skeleton className="h-5 w-40" /> : formatDateTime(t.updatedAt)}
                 />
                 <DetailItem
                   label="Resolved At"

@@ -34,6 +34,19 @@ export type TicketAuditLog = {
   createdAt: string;
 };
 
+export type TicketComment = {
+  id: number;
+  ticketId: number;
+  authorId: number;
+  body: string;
+  createdAt: string;
+};
+
+export type TicketCommentCreateRequest = {
+  body: string;
+  authorId: number;
+};
+
 export type PageResponse<T> = {
   content: T[];
   totalElements: number;
@@ -77,12 +90,16 @@ export type ApiError = {
   details?: Record<string, unknown>;
 };
 
+/**
+ * Client-facing error codes.
+ */
 export type ApiErrorCode =
   | "NOT_FOUND"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "VALIDATION"
   | "CONFLICT"
+  | "TICKET_TRANSITION_INVALID"
   | "FAILED";
 
 export class ApiRequestError extends Error {
@@ -140,6 +157,18 @@ function mapStatusToCode(status: number): ApiErrorCode {
   if (status === 409) return "CONFLICT";
   if (status === 400) return "VALIDATION";
   return "FAILED";
+}
+
+function isApiErrorCode(code: unknown): code is ApiErrorCode {
+  return (
+    code === "NOT_FOUND" ||
+    code === "UNAUTHORIZED" ||
+    code === "FORBIDDEN" ||
+    code === "VALIDATION" ||
+    code === "CONFLICT" ||
+    code === "TICKET_TRANSITION_INVALID" ||
+    code === "FAILED"
+  );
 }
 
 function mergeHeaders(init?: RequestInit): HeadersInit {
@@ -200,7 +229,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const payload = await safeJson<ApiError>(res);
-  const code = mapStatusToCode(res.status);
+
+  const mapped = mapStatusToCode(res.status);
+  const backendCode = payload?.code;
+
+  const code: ApiErrorCode = isApiErrorCode(backendCode) ? backendCode : mapped;
 
   const message =
     payload?.message ||
@@ -208,7 +241,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       ? "Resource not found"
       : code === "VALIDATION"
         ? "Validation failed"
-        : "Request failed");
+        : code === "UNAUTHORIZED"
+          ? "Unauthorized"
+          : code === "FORBIDDEN"
+            ? "Forbidden"
+            : "Request failed");
 
   throw new ApiRequestError(code, res.status, message, payload);
 }
@@ -311,4 +348,33 @@ export async function fetchTicketAuditLogs(
 ): Promise<TicketAuditLog[]> {
   assertPositiveId(id);
   return requestJson<TicketAuditLog[]>(`/tickets/${id}/audit-logs`, init);
+}
+
+// ---------- Comments ----------
+
+export async function fetchTicketComments(
+  ticketId: number,
+  init?: RequestInit
+): Promise<TicketComment[]> {
+  assertPositiveId(ticketId);
+  return requestJson<TicketComment[]>(`/tickets/${ticketId}/comments`, init);
+}
+
+export async function createTicketComment(
+  ticketId: number,
+  body: string,
+  authorId: number,
+  init?: RequestInit
+): Promise<TicketComment> {
+  assertPositiveId(ticketId);
+  requireNonBlank(body, "body");
+
+  const payload: TicketCommentCreateRequest = { body: body.trim(), authorId };
+
+  return requestJson<TicketComment>(`/tickets/${ticketId}/comments`, {
+    ...init,
+    method: "POST",
+    headers: withJsonContentType(init),
+    body: JSON.stringify(payload),
+  });
 }

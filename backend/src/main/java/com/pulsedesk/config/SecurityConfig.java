@@ -13,7 +13,8 @@ public class SecurityConfig {
             "/actuator/health",
             "/actuator/info",
             "/error",
-            "/tickets/**"
+            "/tickets/**",
+            "/notifications/**"
     };
 
     @Bean

@@ -10,3 +10,11 @@ databaseChangeLog:
   - include:
       file: 003-create-ticket-audit-logs.yaml
       relativeToChangelogFile: true
+
+  - include:
+      file: 004-create-ticket-comments.yaml
+      relativeToChangelogFile: true
+
+  - include:
+      file: 005-create-notifications.yaml
+      relativeToChangelogFile: true
