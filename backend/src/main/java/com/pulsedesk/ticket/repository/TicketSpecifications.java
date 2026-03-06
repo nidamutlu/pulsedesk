@@ -13,6 +13,7 @@ public final class TicketSpecifications {
     private static final String FIELD_PRIORITY = "priority";
     private static final String FIELD_ASSIGNEE_ID = "assigneeId";
     private static final String FIELD_TEAM_ID = "teamId";
+    private static final String FIELD_REQUESTER_ID = "requesterId";
     private static final String FIELD_CREATED_AT = "createdAt";
     private static final String FIELD_TITLE = "title";
     private static final String FIELD_DESCRIPTION = "description";
@@ -39,6 +40,11 @@ public final class TicketSpecifications {
     public static Specification<Ticket> hasTeam(Long teamId) {
         return (root, query, cb) ->
                 teamId == null ? cb.conjunction() : cb.equal(root.get(FIELD_TEAM_ID), teamId);
+    }
+
+    public static Specification<Ticket> hasRequester(Long requesterId) {
+        return (root, query, cb) ->
+                requesterId == null ? cb.conjunction() : cb.equal(root.get(FIELD_REQUESTER_ID), requesterId);
     }
 
     public static Specification<Ticket> createdBetween(OffsetDateTime from, OffsetDateTime to) {

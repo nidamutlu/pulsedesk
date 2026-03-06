@@ -1,9 +1,8 @@
 package com.pulsedesk.ticket.service;
 
+import com.pulsedesk.security.AuthPrincipal;
 import com.pulsedesk.ticket.api.dto.TicketAuditLogResponse;
-import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.repository.TicketAuditLogRepository;
-import com.pulsedesk.ticket.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,12 +15,10 @@ import java.util.List;
 public class TicketAuditService {
 
     private final TicketAuditLogRepository auditLogRepository;
-    private final TicketRepository ticketRepository;
+    private final TicketService ticketService;
 
-    public List<TicketAuditLogResponse> listAuditLogs(Long ticketId) {
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new TicketNotFoundException(ticketId);
-        }
+    public List<TicketAuditLogResponse> listAuditLogs(AuthPrincipal me, Long ticketId) {
+        ticketService.getTicketById(me, ticketId);
 
         return auditLogRepository
                 .findByTicketIdOrderByCreatedAtDesc(ticketId)

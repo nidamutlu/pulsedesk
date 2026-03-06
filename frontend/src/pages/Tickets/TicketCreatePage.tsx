@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ApiRequestError, createTicket } from "../../api/tickets";
+
+import { ApiRequestError } from "../../api/http";
+import { createTicket } from "../../api/tickets";
 import type { TicketCreateRequest, TicketPriority } from "../../api/tickets";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -34,8 +36,6 @@ export default function TicketCreatePage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TicketPriority>("LOW");
 
-  // Demo defaults 
-  const requesterId = 101;
   const teamId = 1;
 
   const [saving, setSaving] = useState(false);
@@ -66,6 +66,7 @@ export default function TicketCreatePage() {
       titleRef.current?.focus();
       return;
     }
+
     if (!isDescriptionValid || fe["description"]) {
       descRef.current?.focus();
       return;
@@ -94,7 +95,6 @@ export default function TicketCreatePage() {
       title: trimmedTitle,
       description: trimmedDescription,
       priority,
-      requesterId,
       teamId,
     };
 
@@ -103,17 +103,16 @@ export default function TicketCreatePage() {
       nav(`/tickets/${created.id}`);
     } catch (err: unknown) {
       if (err instanceof ApiRequestError) {
-        const mapped = toFieldErrors(err.payload?.details);
+        const mapped = toFieldErrors(err.details);
 
         if (Object.keys(mapped).length > 0) {
           setFieldErrors(mapped);
-          setGeneralError(err.payload?.message ?? "Please fix the highlighted fields.");
+          setGeneralError("Please fix the highlighted fields.");
           requestAnimationFrame(() => focusFirstInvalidField(mapped));
         } else {
-          setGeneralError(
-            err.payload?.message ?? `${err.status} • ${err.code}: ${err.message}`
-          );
+          setGeneralError(`${err.status} • ${err.message}`);
         }
+
         return;
       }
 
@@ -126,7 +125,6 @@ export default function TicketCreatePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-4xl px-4 py-10">
-        {/* Top bar */}
         <div className="flex items-center justify-between gap-3">
           <Link
             to="/tickets"
@@ -136,7 +134,6 @@ export default function TicketCreatePage() {
           </Link>
         </div>
 
-        {/* Header */}
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -151,17 +148,12 @@ export default function TicketCreatePage() {
 
             <div className="text-sm text-slate-600">
               <div>
-                Requester:{" "}
-                <span className="font-semibold text-slate-900">{requesterId}</span>
-              </div>
-              <div>
                 Team: <span className="font-semibold text-slate-900">{teamId}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Form card */}
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-4">
             <div className="text-sm font-semibold text-slate-900">Details</div>
@@ -178,7 +170,6 @@ export default function TicketCreatePage() {
             )}
 
             <form onSubmit={onSubmit} className="grid gap-5">
-              {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-slate-900">
                   Title <span className="text-rose-600">*</span>
@@ -203,7 +194,6 @@ export default function TicketCreatePage() {
                 <FieldError message={fieldErrors["title"]} />
               </div>
 
-              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-slate-900">
                   Description <span className="text-rose-600">*</span>
@@ -228,7 +218,6 @@ export default function TicketCreatePage() {
                 <FieldError message={fieldErrors["description"]} />
               </div>
 
-              {/* Priority */}
               <div>
                 <label className="block text-sm font-medium text-slate-900">
                   Priority
@@ -255,7 +244,6 @@ export default function TicketCreatePage() {
                 <FieldError message={fieldErrors["priority"]} />
               </div>
 
-              {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button
                   type="submit"
@@ -281,7 +269,7 @@ export default function TicketCreatePage() {
         </div>
 
         <div className="mt-4 text-xs text-slate-500">
-          Note: requesterId and teamId are demo defaults. We will connect these to user context later.
+          Requester is derived from the authenticated user context.
         </div>
       </div>
     </div>

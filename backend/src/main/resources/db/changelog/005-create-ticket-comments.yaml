@@ -1,53 +1,54 @@
 databaseChangeLog:
   - changeSet:
-      id: 003-create-ticket-audit-logs
+      id: 005-create-ticket-comments
       author: pulsedesk
       changes:
         - createTable:
-            tableName: ticket_audit_logs
+            tableName: ticket_comments
             columns:
               - column:
                   name: id
-                  type: bigserial
+                  type: BIGINT
+                  autoIncrement: true
                   constraints:
                     primaryKey: true
+                    primaryKeyName: pk_ticket_comments
                     nullable: false
+
               - column:
                   name: ticket_id
-                  type: bigint
-                  constraints:
-                    nullable: false
-              - column:
-                  name: action
-                  type: varchar(50)
-                  constraints:
-                    nullable: false
-              - column:
-                  name: old_status
-                  type: varchar(50)
-              - column:
-                  name: new_status
-                  type: varchar(50)
-              - column:
-                  name: old_assignee_id
-                  type: bigint
-              - column:
-                  name: new_assignee_id
-                  type: bigint
-              - column:
-                  name: actor_id
-                  type: bigint
-                  constraints:
-                    nullable: false
-              - column:
-                  name: created_at
-                  type: timestamptz
+                  type: BIGINT
                   constraints:
                     nullable: false
 
+              - column:
+                  name: author_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: body
+                  type: TEXT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: ticket_comments
+            baseColumnNames: ticket_id
+            referencedTableName: tickets
+            referencedColumnNames: id
+            constraintName: fk_ticket_comments_ticket
+
         - createIndex:
-            tableName: ticket_audit_logs
-            indexName: idx_ticket_audit_logs_ticket_id
+            tableName: ticket_comments
+            indexName: idx_ticket_comments_ticket_id
             columns:
               - column:
                   name: ticket_id

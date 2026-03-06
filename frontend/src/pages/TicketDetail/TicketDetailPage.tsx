@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+
+import { ApiRequestError } from "../../api/http";
 import {
-  ApiRequestError,
   createTicketComment,
   fetchTicketAuditLogs,
   fetchTicketById,
@@ -32,106 +33,13 @@ function formatDateTime(iso?: string | null) {
   });
 }
 
+function labelStatus(s: TicketStatus) {
+  return s.replaceAll("_", " ");
+}
+
 function actorLabel(actorId: number) {
-  if (actorId === 1) return "Demo User";
   if (!Number.isFinite(actorId) || actorId <= 0) return "System";
-  return `Actor #${actorId}`;
-}
-
-function IconStatusChange({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M7 7h10M7 7l3-3M7 7l3 3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M17 17H7m10 0-3-3m3 3-3 3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconAssigneeChange({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M4 20c1.8-3.5 5-5 8-5s6.2 1.5 8 5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function IconActivity({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M4 12h4l2-6 4 12 2-6h4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function activityMeta(action: string) {
-  if (action === "STATUS_CHANGE") {
-    return {
-      ringCls: "border-amber-200 bg-amber-50 text-amber-700",
-      Icon: IconStatusChange,
-      label: "Status change",
-    };
-  }
-  if (action === "ASSIGNEE_CHANGE") {
-    return {
-      ringCls: "border-violet-200 bg-violet-50 text-violet-700",
-      Icon: IconAssigneeChange,
-      label: "Assignee change",
-    };
-  }
-  return {
-    ringCls: "border-slate-200 bg-slate-50 text-slate-700",
-    Icon: IconActivity,
-    label: "Activity",
-  };
+  return `User #${actorId}`;
 }
 
 function Badge({
@@ -173,13 +81,11 @@ function Badge({
   return <span className={cx(base, cls)}>{value}</span>;
 }
 
-function DetailItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Skeleton({ className }: { className: string }) {
+  return <div className={cx("animate-pulse rounded bg-slate-100", className)} />;
+}
+
+function DetailItem({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -188,16 +94,34 @@ function DetailItem({
   );
 }
 
-function Skeleton({ className }: { className: string }) {
-  return <div className={cx("animate-pulse rounded bg-slate-100", className)} />;
+function getApiErrorMessage(e: ApiRequestError) {
+  const d = e.details as any;
+
+  const code =
+    d && typeof d === "object" && typeof d.code === "string" ? d.code : null;
+
+  const msg =
+    d && typeof d === "object" && typeof d.message === "string"
+      ? d.message
+      : e.message;
+
+  return `${e.status}${code ? ` • ${code}` : ""} • ${msg}`;
 }
 
-function buildApiErrorMessage(e: ApiRequestError) {
-  const details =
-    e.payload?.details && Object.keys(e.payload.details).length > 0
-      ? ` • ${JSON.stringify(e.payload.details)}`
-      : "";
-  return `${e.status} • ${e.code}: ${e.message}${details}`;
+function sortAuditNewestFirst(logs: TicketAuditLog[]) {
+  return [...logs].sort((a, b) => {
+    const ta = Date.parse(a.createdAt);
+    const tb = Date.parse(b.createdAt);
+    if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
+    return tb - ta;
+  });
+}
+
+function isInvalidTransitionError(e: ApiRequestError) {
+  if (e.status === 409) return true;
+  const d = e.details as any;
+  if (d && typeof d === "object" && d.code === "TICKET_TRANSITION_INVALID") return true;
+  return false;
 }
 
 function allowedNextStatuses(from: TicketStatus): TicketStatus[] {
@@ -217,10 +141,6 @@ function allowedNextStatuses(from: TicketStatus): TicketStatus[] {
   }
 }
 
-function labelStatus(s: TicketStatus) {
-  return s.replaceAll("_", " ");
-}
-
 function auditLineText(l: TicketAuditLog) {
   if (l.action === "STATUS_CHANGE") {
     const from = (l.oldStatus ?? "—").replaceAll("_", " ");
@@ -229,31 +149,12 @@ function auditLineText(l: TicketAuditLog) {
   }
 
   if (l.action === "ASSIGNEE_CHANGE") {
-    const from =
-      l.oldAssigneeId === null ? "Unassigned" : String(l.oldAssigneeId);
+    const from = l.oldAssigneeId === null ? "Unassigned" : String(l.oldAssigneeId);
     const to = l.newAssigneeId === null ? "Unassigned" : String(l.newAssigneeId);
     return `Assignee: ${from} → ${to}`;
   }
 
   return l.action;
-}
-
-function sortAuditNewestFirst(logs: TicketAuditLog[]) {
-  return [...logs].sort((a, b) => {
-    const ta = Date.parse(a.createdAt);
-    const tb = Date.parse(b.createdAt);
-    if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
-    return tb - ta;
-  });
-}
-
-function isInvalidTransitionError(e: ApiRequestError) {
-  const payloadCode = e.payload?.code;
-  return (
-    e.status === 409 ||
-    e.code === "TICKET_TRANSITION_INVALID" ||
-    payloadCode === "TICKET_TRANSITION_INVALID"
-  );
 }
 
 export default function TicketDetailPage() {
@@ -264,6 +165,14 @@ export default function TicketDetailPage() {
     const n = Number(id);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [id]);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -282,18 +191,20 @@ export default function TicketDetailPage() {
   const [commentSaving, setCommentSaving] = useState(false);
   const [commentSaveError, setCommentSaveError] = useState<string | null>(null);
 
-  const [isTransitionOpen, setIsTransitionOpen] = useState(false);
+  const [transitionOpen, setTransitionOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<TicketStatus | "">("");
   const [transitionSaving, setTransitionSaving] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
 
-  const mountedRef = useRef(true);
+  const statusOptions: TicketStatus[] = useMemo(() => {
+    if (!ticket) return [];
+    return allowedNextStatuses(ticket.status);
+  }, [ticket]);
+
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+    if (!ticket) return;
+    setNextStatus(statusOptions[0] ?? "");
+  }, [ticket?.id, ticket?.status, statusOptions]);
 
   const loadAudit = useCallback(async (idNum: number) => {
     setAuditError(null);
@@ -305,7 +216,7 @@ export default function TicketDetailPage() {
       setAuditLogs(sortAuditNewestFirst(logs));
     } catch (e: unknown) {
       if (!mountedRef.current) return;
-      if (e instanceof ApiRequestError) setAuditError(buildApiErrorMessage(e));
+      if (e instanceof ApiRequestError) setAuditError(getApiErrorMessage(e));
       else setAuditError(e instanceof Error ? e.message : String(e));
     } finally {
       if (mountedRef.current) setAuditLoading(false);
@@ -322,14 +233,14 @@ export default function TicketDetailPage() {
       setComments(list);
     } catch (e: unknown) {
       if (!mountedRef.current) return;
-      if (e instanceof ApiRequestError) setCommentsError(buildApiErrorMessage(e));
+      if (e instanceof ApiRequestError) setCommentsError(getApiErrorMessage(e));
       else setCommentsError(e instanceof Error ? e.message : String(e));
     } finally {
       if (mountedRef.current) setCommentsLoading(false);
     }
   }, []);
 
-  const load = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     setTicket(null);
     setNotFound(false);
     setError(null);
@@ -359,15 +270,11 @@ export default function TicketDetailPage() {
       if (!mountedRef.current) return;
 
       if (e instanceof ApiRequestError) {
-        if (
-          e.status === 404 ||
-          e.code === "NOT_FOUND" ||
-          e.payload?.code === "NOT_FOUND"
-        ) {
+        if (e.status === 404) {
           setNotFound(true);
           return;
         }
-        setError(buildApiErrorMessage(e));
+        setError(getApiErrorMessage(e));
         return;
       }
 
@@ -378,32 +285,19 @@ export default function TicketDetailPage() {
   }, [ticketId, loadAudit, loadComments]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!ticket) return;
-    const opts = allowedNextStatuses(ticket.status);
-    setNextStatus(opts[0] ?? "");
-  }, [ticket?.id, ticket?.status]);
+    void loadAll();
+  }, [loadAll]);
 
   const openTransition = useCallback(() => {
     setTransitionError(null);
-    setIsTransitionOpen(true);
+    setTransitionOpen(true);
   }, []);
 
   const closeTransition = useCallback(() => {
     setTransitionError(null);
-    setIsTransitionOpen(false);
-
-    if (!ticket) {
-      setNextStatus("");
-      return;
-    }
-
-    const opts = allowedNextStatuses(ticket.status);
-    setNextStatus(opts[0] ?? "");
-  }, [ticket]);
+    setTransitionOpen(false);
+    setNextStatus(statusOptions[0] ?? "");
+  }, [statusOptions]);
 
   const applyTransition = useCallback(async () => {
     if (!ticket || ticketId === null) return;
@@ -424,7 +318,7 @@ export default function TicketDetailPage() {
       if (!mountedRef.current) return;
 
       setTicket(fresh);
-      setIsTransitionOpen(false);
+      setTransitionOpen(false);
       setNextStatus("");
 
       void loadAudit(fresh.id);
@@ -433,13 +327,10 @@ export default function TicketDetailPage() {
 
       if (e instanceof ApiRequestError) {
         if (isInvalidTransitionError(e)) {
-          setTransitionError(
-            e.payload?.message ||
-              "This status transition is not allowed for the current ticket."
-          );
+          setTransitionError("This status transition is not allowed for the current ticket.");
           return;
         }
-        setTransitionError(buildApiErrorMessage(e));
+        setTransitionError(getApiErrorMessage(e));
         return;
       }
 
@@ -462,7 +353,7 @@ export default function TicketDetailPage() {
     setCommentSaveError(null);
 
     try {
-      await createTicketComment(ticketId, body, 1);
+      await createTicketComment(ticketId, body);
       if (!mountedRef.current) return;
 
       setCommentBody("");
@@ -470,7 +361,7 @@ export default function TicketDetailPage() {
     } catch (e: unknown) {
       if (!mountedRef.current) return;
 
-      if (e instanceof ApiRequestError) setCommentSaveError(buildApiErrorMessage(e));
+      if (e instanceof ApiRequestError) setCommentSaveError(getApiErrorMessage(e));
       else setCommentSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       if (mountedRef.current) setCommentSaving(false);
@@ -490,9 +381,7 @@ export default function TicketDetailPage() {
           </button>
 
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-            <h1 className="text-2xl font-semibold text-slate-900">
-              Ticket not found
-            </h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Ticket not found</h1>
             <p className="mt-2 text-sm text-slate-600">
               This ticket does not exist or you may not have access.
             </p>
@@ -515,10 +404,7 @@ export default function TicketDetailPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="mx-auto w-full max-w-5xl px-4 py-10">
-          <Link
-            to="/tickets"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
+          <Link to="/tickets" className="text-sm font-medium text-slate-600 hover:text-slate-900">
             ← Back to Tickets
           </Link>
 
@@ -528,7 +414,7 @@ export default function TicketDetailPage() {
             <div className="mt-5 flex gap-3">
               <button
                 type="button"
-                onClick={() => void load()}
+                onClick={() => void loadAll()}
                 className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 Retry
@@ -548,52 +434,33 @@ export default function TicketDetailPage() {
   }
 
   const t = ticket;
-  const statusOptions: TicketStatus[] = t ? allowedNextStatuses(t.status) : [];
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="flex items-center justify-between gap-3">
-          <Link
-            to="/tickets"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
+          <Link to="/tickets" className="text-sm font-medium text-slate-600 hover:text-slate-900">
             ← Back to Tickets
           </Link>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-              title="Edit will be enabled in a later phase"
-            >
-              Edit
-            </button>
-
-            <button
-              type="button"
               onClick={openTransition}
               disabled={loading || !t || statusOptions.length === 0}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              title={
-                statusOptions.length === 0
-                  ? "No transitions available"
-                  : "Change status"
-              }
+              title={statusOptions.length === 0 ? "No transitions available" : "Change status"}
             >
               Change Status
             </button>
           </div>
         </div>
 
-        {isTransitionOpen && (
+        {transitionOpen && (
           <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-900">
-                  Status Transition
-                </div>
+                <div className="text-sm font-semibold text-slate-900">Status Transition</div>
                 <div className="mt-1 text-sm text-slate-600">
                   Current:{" "}
                   <span className="font-semibold text-slate-900">
@@ -605,9 +472,7 @@ export default function TicketDetailPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select
                   value={nextStatus}
-                  onChange={(e) =>
-                    setNextStatus(e.target.value as TicketStatus | "")
-                  }
+                  onChange={(e) => setNextStatus(e.target.value as TicketStatus | "")}
                   disabled={transitionSaving}
                   className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-slate-400 disabled:opacity-60"
                 >
@@ -684,7 +549,7 @@ export default function TicketDetailPage() {
 
             <div className="text-sm text-slate-600">
               {loading || !t ? (
-                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-5 w-44" />
               ) : (
                 <div>
                   Updated{" "}
@@ -700,9 +565,7 @@ export default function TicketDetailPage() {
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">
-                Description
-              </div>
+              <div className="text-sm font-semibold text-slate-900">Description</div>
 
               <div className="mt-4">
                 {loading || !t ? (
@@ -720,7 +583,6 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* ---------- Comments ---------- */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-slate-900">Comments</div>
@@ -741,14 +603,12 @@ export default function TicketDetailPage() {
                   onChange={(e) => setCommentBody(e.target.value)}
                   disabled={!t || commentSaving}
                   rows={3}
-                  placeholder="Write a comment… (use @username to mention)"
+                  placeholder="Write a comment… (use @someone to mention)"
                   className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 disabled:opacity-60"
                 />
 
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="text-xs text-slate-500">
-                    {commentBody.trim().length}/5000
-                  </div>
+                  <div className="text-xs text-slate-500">{commentBody.trim().length}/5000</div>
 
                   <button
                     type="button"
@@ -803,7 +663,6 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* ---------- Activity (timeline UI) ---------- */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-slate-900">Activity</div>
@@ -828,51 +687,27 @@ export default function TicketDetailPage() {
                     {auditLoading ? "Loading activity..." : "No activity yet."}
                   </div>
                 ) : (
-                  <ul className="relative space-y-4">
-                    <div className="pointer-events-none absolute left-[11px] top-2 bottom-2 w-px bg-slate-200" />
-
-                    {auditLogs.map((l, idx) => {
-                      const meta = activityMeta(l.action);
-                      const Icon = meta.Icon;
-                      const isLatest = idx === 0;
-
-                      return (
-                        <li key={l.id} className="relative pl-8">
-                          <div
-                            className={cx(
-                              "absolute left-0 top-3 grid h-6 w-6 place-items-center rounded-full border",
-                              meta.ringCls,
-                              isLatest && "ring-2 ring-slate-200"
-                            )}
-                            title={meta.label}
-                          >
-                            <Icon className="h-4 w-4" />
-                          </div>
-
-                          <div
-                            className={cx(
-                              "rounded-xl border border-slate-200 bg-white px-4 py-3",
-                              auditLoading && "opacity-70"
-                            )}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-900">
-                                  {auditLineText(l)}
-                                </div>
-                                <div className="mt-1 text-xs text-slate-600">
-                                  {actorLabel(l.actorId)}
-                                </div>
-                              </div>
-
-                              <div className="shrink-0 text-xs font-medium text-slate-500">
-                                {formatDateTime(l.createdAt)}
-                              </div>
+                  <ul className="space-y-3">
+                    {auditLogs.map((l) => (
+                      <li
+                        key={l.id}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900">
+                              {auditLineText(l)}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-600">
+                              {actorLabel(l.actorId)}
                             </div>
                           </div>
-                        </li>
-                      );
-                    })}
+                          <div className="shrink-0 text-xs font-medium text-slate-500">
+                            {formatDateTime(l.createdAt)}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>
@@ -896,13 +731,7 @@ export default function TicketDetailPage() {
                 />
                 <DetailItem
                   label="Priority"
-                  value={
-                    loading || !t ? (
-                      <Skeleton className="h-5 w-20" />
-                    ) : (
-                      String(t.priority)
-                    )
-                  }
+                  value={loading || !t ? <Skeleton className="h-5 w-20" /> : String(t.priority)}
                 />
                 <DetailItem
                   label="Requester ID"
@@ -929,17 +758,17 @@ export default function TicketDetailPage() {
 
                 <DetailItem
                   label="Created At"
-                  value={loading || !t ? <Skeleton className="h-5 w-40" /> : formatDateTime(t.createdAt)}
+                  value={loading || !t ? <Skeleton className="h-5 w-44" /> : formatDateTime(t.createdAt)}
                 />
                 <DetailItem
                   label="Updated At"
-                  value={loading || !t ? <Skeleton className="h-5 w-40" /> : formatDateTime(t.updatedAt)}
+                  value={loading || !t ? <Skeleton className="h-5 w-44" /> : formatDateTime(t.updatedAt)}
                 />
                 <DetailItem
                   label="Resolved At"
                   value={
                     loading || !t ? (
-                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="h-5 w-44" />
                     ) : t.resolvedAt ? (
                       formatDateTime(t.resolvedAt)
                     ) : (
@@ -953,7 +782,7 @@ export default function TicketDetailPage() {
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
               <div className="font-semibold text-slate-900">Tip</div>
               <div className="mt-1">
-                Use the Tickets list to quickly open and review incoming issues.
+                Use <span className="font-semibold text-slate-900">@someone</span> in a comment to mention a user.
               </div>
             </div>
           </div>

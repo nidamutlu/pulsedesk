@@ -40,11 +40,10 @@ public class CommentService {
     }
 
     @Transactional
-    public CommentResponse addComment(Long ticketId, CommentCreateRequest request) {
+    public CommentResponse addComment(Long ticketId, Long authorId, CommentCreateRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
 
-        Long authorId = request.authorId();
         if (authorId == null || authorId <= 0) {
             throw new IllegalArgumentException("authorId is required");
         }

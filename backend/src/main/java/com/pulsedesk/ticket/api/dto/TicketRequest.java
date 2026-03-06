@@ -21,7 +21,6 @@ public class TicketRequest {
     private TicketPriority priority;
     private TicketStatus status;
 
-    private Long requesterId;
     private Long assigneeId;
     private Long teamId;
 }

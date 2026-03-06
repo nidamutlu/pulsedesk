@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: 005-create-notifications
+      id: 006-create-notifications
       author: pulsedesk
       changes:
         - createTable:

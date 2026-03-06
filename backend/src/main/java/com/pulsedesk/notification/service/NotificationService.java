@@ -6,14 +6,17 @@ import com.pulsedesk.notification.domain.NotificationType;
 import com.pulsedesk.notification.exception.NotificationNotFoundException;
 import com.pulsedesk.notification.repository.NotificationRepository;
 import com.pulsedesk.ticket.domain.Comment;
+import com.pulsedesk.user.repo.UserRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,18 +24,24 @@ import java.util.regex.Pattern;
 @Service
 public class NotificationService {
 
-    private static final Pattern MENTION_USER_ID = Pattern.compile("@(\\d+)");
+    private static final Pattern MENTION_USERNAME =
+            Pattern.compile("(?<!\\w)@([A-Za-z0-9._-]+)");
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
 
     private final NotificationRepository notificationRepository;
+    private final UserRepository userRepository;
 
-    public NotificationService(NotificationRepository notificationRepository) {
+    public NotificationService(
+            NotificationRepository notificationRepository,
+            UserRepository userRepository
+    ) {
         this.notificationRepository = notificationRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional(readOnly = true)
-    public List<NotificationResponse> list(Long userId, boolean unreadOnly, Integer limit) {
+    public List<NotificationResponse> listByUserId(Long userId, boolean unreadOnly, Integer limit) {
         requireValidUserId(userId);
 
         int take = normalizeLimit(limit);
@@ -42,36 +51,38 @@ public class NotificationService {
                 ? notificationRepository.findByUserIdAndReadAtIsNullOrderByCreatedAtDesc(userId, page)
                 : notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, page);
 
-        return items.stream().map(NotificationService::toResponse).toList();
+        return items.stream()
+                .map(NotificationService::toResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)
-    public long countUnread(Long userId) {
+    public long countUnreadByUserId(Long userId) {
         requireValidUserId(userId);
         return notificationRepository.countByUserIdAndReadAtIsNull(userId);
     }
 
     @Transactional
-    public NotificationResponse markAsRead(Long notificationId, Long userId) {
+    public NotificationResponse markAsReadByUserId(Long notificationId, Long userId) {
         requireValidUserId(userId);
 
-        Notification n = notificationRepository.findById(notificationId)
+        Notification notification = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new NotificationNotFoundException(notificationId));
 
-        if (!userId.equals(n.getUserId())) {
-            throw new IllegalArgumentException("Notification does not belong to the current user");
+        if (!userId.equals(notification.getUserId())) {
+            throw new AccessDeniedException("Notification does not belong to the current user");
         }
 
-        if (n.getReadAt() == null) {
-            n.setReadAt(OffsetDateTime.now());
-            n = notificationRepository.save(n);
+        if (notification.getReadAt() == null) {
+            notification.setReadAt(OffsetDateTime.now());
+            notification = notificationRepository.save(notification);
         }
 
-        return toResponse(n);
+        return toResponse(notification);
     }
 
     @Transactional
-    public void markAllAsRead(Long userId) {
+    public void markAllAsReadByUserId(Long userId) {
         requireValidUserId(userId);
 
         int pageNumber = 0;
@@ -82,14 +93,17 @@ public class NotificationService {
             List<Notification> batch =
                     notificationRepository.findByUserIdAndReadAtIsNullOrderByCreatedAtDesc(userId, page);
 
-            if (batch.isEmpty()) break;
+            if (batch.isEmpty()) {
+                break;
+            }
 
             OffsetDateTime now = OffsetDateTime.now();
-            batch.forEach(n -> n.setReadAt(now));
-
+            batch.forEach(notification -> notification.setReadAt(now));
             notificationRepository.saveAll(batch);
 
-            if (batch.size() < MAX_LIMIT) break;
+            if (batch.size() < MAX_LIMIT) {
+                break;
+            }
 
             pageNumber++;
         }
@@ -97,82 +111,104 @@ public class NotificationService {
 
     @Transactional
     public void notifyOnComment(Comment comment) {
-        if (comment == null) return;
-
-        var ticket = comment.getTicket();
-        if (ticket == null) return;
+        if (comment == null || comment.getTicket() == null) {
+            return;
+        }
 
         Long authorId = comment.getAuthorId();
-        Long ticketId = ticket.getId();
+        Long ticketId = comment.getTicket().getId();
 
-        Set<Long> mentionedIds = extractMentionedUserIds(comment.getBody());
+        Set<Long> mentionedUserIds = extractMentionedUserIds(comment.getBody());
 
         Set<Long> recipients = new LinkedHashSet<>();
-        if (ticket.getRequesterId() != null) recipients.add(ticket.getRequesterId());
-        if (ticket.getAssigneeId() != null) recipients.add(ticket.getAssigneeId());
-        recipients.addAll(mentionedIds);
-
+        if (comment.getTicket().getRequesterId() != null) {
+            recipients.add(comment.getTicket().getRequesterId());
+        }
+        if (comment.getTicket().getAssigneeId() != null) {
+            recipients.add(comment.getTicket().getAssigneeId());
+        }
+        recipients.addAll(mentionedUserIds);
         recipients.remove(authorId);
 
-        for (Long userId : recipients) {
-            if (!isValidUserId(userId)) continue;
+        for (Long recipientUserId : recipients) {
+            if (!isValidUserId(recipientUserId)) {
+                continue;
+            }
 
-            NotificationType type = mentionedIds.contains(userId)
+            NotificationType type = mentionedUserIds.contains(recipientUserId)
                     ? NotificationType.MENTION
                     : NotificationType.COMMENT_ADDED;
 
-            String message = (type == NotificationType.MENTION)
+            String message = type == NotificationType.MENTION
                     ? "You were mentioned on Ticket #" + ticketId
                     : "New comment on Ticket #" + ticketId;
 
-            createNotification(userId, comment, type, message);
+            createNotification(recipientUserId, comment, type, message);
         }
     }
 
     private void createNotification(Long userId, Comment comment, NotificationType type, String message) {
-        Notification n = new Notification(
+        Notification notification = new Notification(
                 userId,
                 comment.getTicket(),
                 comment,
                 type,
-                message,
-                OffsetDateTime.now()
+                message
         );
-        notificationRepository.save(n);
+        notificationRepository.save(notification);
     }
 
-    private static NotificationResponse toResponse(Notification n) {
-        Long ticketId = (n.getTicket() != null) ? n.getTicket().getId() : null;
-        Long commentId = (n.getComment() != null) ? n.getComment().getId() : null;
+    private Set<Long> extractMentionedUserIds(String body) {
+        if (body == null || body.isBlank()) {
+            return Set.of();
+        }
+
+        Matcher matcher = MENTION_USERNAME.matcher(body);
+        Set<Long> mentionedUserIds = new LinkedHashSet<>();
+
+        while (matcher.find()) {
+            String rawUsername = matcher.group(1);
+            String username = normalizeMention(rawUsername);
+
+            userRepository.findByUsernameIgnoreCase(username)
+                    .map(user -> user.getId())
+                    .ifPresent(mentionedUserIds::add);
+        }
+
+        return mentionedUserIds;
+    }
+
+    private static String normalizeMention(String username) {
+        if (username == null) {
+            return "";
+        }
+
+        return username
+                .trim()
+                .replaceAll("[.,;:!?]+$", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private static NotificationResponse toResponse(Notification notification) {
+        Long ticketId = notification.getTicket() != null ? notification.getTicket().getId() : null;
+        Long commentId = notification.getComment() != null ? notification.getComment().getId() : null;
 
         return new NotificationResponse(
-                n.getId(),
-                n.getUserId(),
+                notification.getId(),
+                notification.getUserId(),
                 ticketId,
                 commentId,
-                n.getType(),
-                n.getMessage(),
-                n.getCreatedAt(),
-                n.getReadAt()
+                notification.getType(),
+                notification.getMessage(),
+                notification.getCreatedAt(),
+                notification.getReadAt()
         );
-    }
-
-    private static Set<Long> extractMentionedUserIds(String body) {
-        if (body == null || body.isBlank()) return Set.of();
-
-        Matcher m = MENTION_USER_ID.matcher(body);
-        Set<Long> out = new LinkedHashSet<>();
-        while (m.find()) {
-            try {
-                out.add(Long.parseLong(m.group(1)));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return out;
     }
 
     private static int normalizeLimit(Integer limit) {
-        if (limit == null || limit <= 0) return DEFAULT_LIMIT;
+        if (limit == null || limit <= 0) {
+            return DEFAULT_LIMIT;
+        }
         return Math.min(limit, MAX_LIMIT);
     }
 

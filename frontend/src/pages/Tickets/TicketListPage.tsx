@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ApiRequestError, fetchTickets } from "../../api/tickets";
-import type { PageResponse, Ticket } from "../../api/tickets";
+
+import { ApiRequestError } from "../../api/http";
+import { fetchTickets } from "../../api/tickets";
+import type { PageResponse, Ticket, TicketListParams } from "../../api/tickets";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -54,66 +56,94 @@ function Badge({
           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
           : "border-slate-200 bg-white text-slate-700";
 
-  return <span className={cx(base, cls)}>{value}</span>;
+  return (
+    <span className={cx(base, cls)}>
+      {value === "HIGH" && "🔴 "}
+      {value === "MEDIUM" && "🟡 "}
+      {value === "LOW" && "🟢 "}
+      {value}
+    </span>
+  );
 }
 
 function Skeleton({ className }: { className: string }) {
   return <div className={cx("animate-pulse rounded bg-slate-100", className)} />;
 }
 
-function buildApiErrorMessage(e: ApiRequestError) {
-  const details =
-    e.payload?.details && Object.keys(e.payload.details).length > 0
-      ? ` • ${JSON.stringify(e.payload.details)}`
-      : "";
-  return `${e.status} • ${e.code}: ${e.message}${details}`;
+function getApiErrorMessage(e: ApiRequestError) {
+  const d = e.details as any;
+
+  const code =
+    d && typeof d === "object" && typeof d.code === "string" ? d.code : null;
+
+  const msg =
+    d && typeof d === "object" && typeof d.message === "string"
+      ? d.message
+      : e.message;
+
+  return `${e.status}${code ? ` • ${code}` : ""} • ${msg}`;
 }
+
+type StatusFilter = Ticket["status"] | "ALL";
+type PriorityFilter = Ticket["priority"] | "ALL";
 
 export default function TicketListPage() {
   const nav = useNavigate();
 
   const [page, setPage] = useState(0);
   const [size] = useState(10);
+
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [priority, setPriority] = useState<PriorityFilter>("ALL");
+  const [q, setQ] = useState("");
 
   const [data, setData] = useState<PageResponse<Ticket> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [reloadKey, setReloadKey] = useState(0);
 
-  const params = useMemo(
+  const params: TicketListParams = useMemo(
     () => ({
       page,
       size,
-      sortField: "createdAt" as const,
+      sortField: "createdAt",
       sortDir,
+      status: status === "ALL" ? undefined : status,
+      priority: priority === "ALL" ? undefined : priority,
+      q: q.trim().length > 0 ? q.trim() : undefined,
     }),
-    [page, size, sortDir]
+    [page, size, sortDir, status, priority, q]
   );
 
   useEffect(() => {
-    const ac = new AbortController();
+    let cancelled = false;
 
     setLoading(true);
     setError(null);
 
-    fetchTickets(params, { signal: ac.signal })
-      .then((res) => setData(res))
+    fetchTickets(params)
+      .then((res) => {
+        if (cancelled) return;
+        setData(res);
+      })
       .catch((e) => {
-        if (ac.signal.aborted) return;
+        if (cancelled) return;
 
         if (e instanceof ApiRequestError) {
-          setError(buildApiErrorMessage(e));
+          setError(getApiErrorMessage(e));
           return;
         }
-
         setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
+        if (!cancelled) setLoading(false);
       });
 
-    return () => ac.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [params, reloadKey]);
 
   const totalPages = Math.max(1, data?.totalPages ?? 1);
@@ -122,60 +152,126 @@ export default function TicketListPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
             Tickets
           </h1>
-          <p className="text-sm text-slate-600">
-            Browse, sort, and open ticket details.
+          <p className="mt-1 text-sm text-slate-600">
+            Filter, search, and open ticket details.
           </p>
         </div>
 
-        <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-sm font-medium text-slate-700">
-              Sort by createdAt
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="lg:col-span-2">
+              <label className="text-xs font-semibold text-slate-600">
+                Search
+              </label>
+              <input
+                value={q}
+                onChange={(e) => {
+                  setPage(0);
+                  setQ(e.target.value);
+                }}
+                placeholder="Search title or description…"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+              />
             </div>
 
-            <select
-              value={sortDir}
-              onChange={(e) => {
-                setPage(0);
-                setSortDir(e.target.value as "asc" | "desc");
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            >
-              <option value="desc">Newest first</option>
-              <option value="asc">Oldest first</option>
-            </select>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => {
+                  setPage(0);
+                  setStatus(e.target.value as StatusFilter);
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+              >
+                <option value="ALL">All</option>
+                <option value="OPEN">OPEN</option>
+                <option value="IN_PROGRESS">IN PROGRESS</option>
+                <option value="WAITING_CUSTOMER">WAITING CUSTOMER</option>
+                <option value="RESOLVED">RESOLVED</option>
+                <option value="CLOSED">CLOSED</option>
+              </select>
+            </div>
 
+            <div>
+              <label className="text-xs font-semibold text-slate-600">
+                Priority
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => {
+                  setPage(0);
+                  setPriority(e.target.value as PriorityFilter);
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+              >
+                <option value="ALL">All</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600">
+                Sort
+              </label>
+              <select
+                value={sortDir}
+                onChange={(e) => {
+                  setPage(0);
+                  setSortDir(e.target.value as "asc" | "desc");
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+              >
+                <option value="desc">Newest first</option>
+                <option value="asc">Oldest first</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-600">
               {data
-                ? `Page ${data.number + 1} / ${totalPages} • Total ${
-                    data.totalElements
-                  }`
+                ? `Page ${data.number + 1} / ${totalPages} • Total ${data.totalElements}`
                 : loading
                   ? "Loading…"
                   : "—"}
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={!data || data.first || loading}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Prev
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Refresh
+              </button>
 
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!data || data.last || loading}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Next
-            </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={!data || data.first || loading}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Prev
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!data || data.last || loading}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
 
@@ -199,7 +295,7 @@ export default function TicketListPage() {
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md hover:border-slate-300"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
@@ -222,12 +318,13 @@ export default function TicketListPage() {
           {empty && (
             <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
               <div className="text-lg font-semibold text-slate-900">
-                No tickets yet
+                No tickets found
               </div>
               <div className="mt-2 text-sm text-slate-600">
-                Create your first ticket to start tracking issues.
+                Try changing filters or create a new ticket.
               </div>
               <button
+                type="button"
                 onClick={() => nav("/tickets/new")}
                 className="mt-6 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
@@ -241,13 +338,14 @@ export default function TicketListPage() {
               {(data?.content ?? []).map((t) => (
                 <div
                   key={t.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md hover:border-slate-300"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-slate-500">
                         Ticket #{t.id}
                       </div>
+
                       <div className="mt-1 truncate text-lg font-semibold text-slate-900">
                         {t.title}
                       </div>
@@ -264,6 +362,7 @@ export default function TicketListPage() {
                     </div>
 
                     <button
+                      type="button"
                       onClick={() => nav(`/tickets/${t.id}`)}
                       className="inline-flex items-center self-start rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                     >

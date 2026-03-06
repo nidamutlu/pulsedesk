@@ -17,7 +17,7 @@ public record TicketAuditLogResponse(
     public static TicketAuditLogResponse from(TicketAuditLog log) {
         return new TicketAuditLogResponse(
                 log.getId(),
-                log.getAction(),
+                log.getAction() == null ? null : log.getAction().name(),
                 log.getOldStatus(),
                 log.getNewStatus(),
                 log.getOldAssigneeId(),

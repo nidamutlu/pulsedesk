@@ -1,28 +1,37 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { login } from "../../api/auth";
+import { ApiRequestError } from "../../api/http";
 
 export default function LoginPage() {
   const nav = useNavigate();
 
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
 
+    const u = username.trim();
+    if (!u || !password) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      // Placeholder login (auth will be wired later)
-      await new Promise((r) => setTimeout(r, 700));
-
-      // Simulate success
-      nav("/dashboard");
-    } catch {
-      setError("Invalid credentials.");
+      await login({ username: u, password });
+      nav("/dashboard", { replace: true });
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        setError(err.status === 401 ? "Invalid credentials." : err.message);
+      } else if (err instanceof Error) {
+        setError(err.message || "Sign in failed.");
+      } else {
+        setError("Sign in failed.");
+      }
     } finally {
       setLoading(false);
     }
@@ -32,7 +41,6 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="flex min-h-screen items-center justify-center px-4">
         <div className="w-full max-w-md">
-          {/* Card */}
           <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
             <div className="text-center">
               <div className="text-sm font-semibold text-slate-500">
@@ -53,22 +61,22 @@ export default function LoginPage() {
             )}
 
             <form onSubmit={onSubmit} className="mt-6 grid gap-4">
-              {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-slate-900">
-                  Email
+                  Username
                 </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  autoComplete="username"
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
                   required
                 />
               </div>
 
-              {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-slate-900">
                   Password
@@ -77,13 +85,14 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
                   required
                 />
               </div>
 
-              {/* Actions */}
               <button
                 type="submit"
                 disabled={loading}
@@ -94,11 +103,10 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-6 text-center text-xs text-slate-500">
-              Authentication will be connected in a later phase.
+              Sign in with your assigned account.
             </div>
           </div>
 
-          {/* Footer */}
           <div className="mt-4 text-center text-xs text-slate-400">
             © {new Date().getFullYear()} PulseDesk
           </div>

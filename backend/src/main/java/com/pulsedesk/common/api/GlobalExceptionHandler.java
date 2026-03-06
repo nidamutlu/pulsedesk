@@ -4,13 +4,21 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.exception.TicketTransitionInvalidException;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -20,120 +28,238 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // -------- Domain errors --------
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /** 404 - Ticket not found */
     @ExceptionHandler(TicketNotFoundException.class)
     public ResponseEntity<ApiError> handleTicketNotFound(TicketNotFoundException ex) {
-        return build(HttpStatus.NOT_FOUND, ApiError.of(
-                "TICKET_NOT_FOUND",
-                ex.getMessage(),
-                Map.of("ticketId", ex.getTicketId())
-        ));
-    }
-
-    /** 409 - Invalid workflow transition */
-    @ExceptionHandler(TicketTransitionInvalidException.class)
-    public ResponseEntity<ApiError> handleTransitionInvalid(TicketTransitionInvalidException ex) {
-        return build(HttpStatus.CONFLICT, ApiError.of(
-                "TICKET_TRANSITION_INVALID",
-                ex.getMessage(),
-                Map.of(
-                        "ticketId", ex.getTicketId(),
-                        "transition", ex.getTransition()
+        return respond(
+                HttpStatus.NOT_FOUND,
+                ApiError.of(
+                        "TICKET_NOT_FOUND",
+                        ex.getMessage(),
+                        Map.of("ticketId", ex.getTicketId())
                 )
-        ));
+        );
     }
 
-    // -------- Validation / request errors --------
+    @ExceptionHandler(TicketTransitionInvalidException.class)
+    public ResponseEntity<ApiError> handleTicketTransitionInvalid(TicketTransitionInvalidException ex) {
+        return respond(
+                HttpStatus.CONFLICT,
+                ApiError.of(
+                        "TICKET_TRANSITION_INVALID",
+                        ex.getMessage(),
+                        Map.of(
+                                "ticketId", ex.getTicketId(),
+                                "transition", ex.getTransition()
+                        )
+                )
+        );
+    }
 
-    /** 400 - Bean validation failed */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiError> handleAuthentication(AuthenticationException ex) {
+        return respond(
+                HttpStatus.UNAUTHORIZED,
+                ApiError.of(
+                        "AUTH_UNAUTHORIZED",
+                        "Authentication is required to access this resource"
+                )
+        );
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+        return respond(
+                HttpStatus.FORBIDDEN,
+                ApiError.of(
+                        "AUTH_FORBIDDEN",
+                        "You do not have permission to perform this action"
+                )
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        Map<String, String> details = new LinkedHashMap<>();
 
-        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
-            String message = (fe.getDefaultMessage() == null || fe.getDefaultMessage().isBlank())
+        for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
+            String message = (fieldError.getDefaultMessage() == null || fieldError.getDefaultMessage().isBlank())
                     ? "invalid value"
-                    : fe.getDefaultMessage();
+                    : fieldError.getDefaultMessage();
 
-            fieldErrors.merge(fe.getField(), message, (a, b) -> a + "; " + b);
+            details.merge(fieldError.getField(), message, (a, b) -> a + "; " + b);
         }
 
-        return build(HttpStatus.BAD_REQUEST, ApiError.of(
-                "VALIDATION_ERROR",
-                "Validation failed",
-                fieldErrors
-        ));
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "VALIDATION_ERROR",
+                        "Validation failed",
+                        details
+                )
+        );
     }
 
-    /** 400 - Invalid input */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(ConstraintViolationException ex) {
+        Map<String, String> details = new LinkedHashMap<>();
+
+        for (ConstraintViolation<?> violation : ex.getConstraintViolations()) {
+            String path = violation.getPropertyPath() == null
+                    ? "unknown"
+                    : violation.getPropertyPath().toString();
+
+            String message = (violation.getMessage() == null || violation.getMessage().isBlank())
+                    ? "invalid value"
+                    : violation.getMessage();
+
+            details.merge(path, message, (a, b) -> a + "; " + b);
+        }
+
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "VALIDATION_ERROR",
+                        "Validation failed",
+                        details
+                )
+        );
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
-        return build(HttpStatus.BAD_REQUEST, ApiError.of(
-                "INVALID_REQUEST",
-                ex.getMessage()
-        ));
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "INVALID_REQUEST",
+                        ex.getMessage()
+                )
+        );
     }
 
-    /** 400 - Malformed JSON / wrong enum value */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("parameter", ex.getName());
+        details.put("rejectedValue", ex.getValue());
+
+        if (ex.getRequiredType() != null) {
+            details.put("requiredType", ex.getRequiredType().getSimpleName());
+        }
+
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "INVALID_REQUEST_PARAM",
+                        "Invalid value for '" + ex.getName() + "'",
+                        details
+                )
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> handleMissingRequestParameter(MissingServletRequestParameterException ex) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("parameter", ex.getParameterName());
+        details.put("requiredType", ex.getParameterType());
+
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "MISSING_REQUEST_PARAM",
+                        "Missing required parameter '" + ex.getParameterName() + "'",
+                        details
+                )
+        );
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleUnreadableBody(HttpMessageNotReadableException ex) {
-        Throwable root = rootCause(ex);
+        Throwable rootCause = getRootCause(ex);
 
-        if (root instanceof InvalidFormatException ife && isEnumTarget(ife)) {
-            String field = lastFieldName(ife.getPath());
+        if (rootCause instanceof InvalidFormatException invalidFormatException
+                && isEnumTarget(invalidFormatException)) {
+
+            String field = getLastFieldName(invalidFormatException.getPath());
 
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("field", field);
-            details.put("rejectedValue", ife.getValue());
-            details.put("allowedValues", enumValues(ife.getTargetType()));
+            details.put("rejectedValue", invalidFormatException.getValue());
+            details.put("allowedValues", getEnumValues(invalidFormatException.getTargetType()));
 
-            return build(HttpStatus.BAD_REQUEST, ApiError.of(
-                    "INVALID_ENUM_VALUE",
-                    "Invalid value for '" + field + "'",
-                    details
-            ));
+            return respond(
+                    HttpStatus.BAD_REQUEST,
+                    ApiError.of(
+                            "INVALID_ENUM_VALUE",
+                            "Invalid value for '" + field + "'",
+                            details
+                    )
+            );
         }
 
-        return build(HttpStatus.BAD_REQUEST, ApiError.of(
-                "MALFORMED_JSON",
-                "Malformed JSON request body"
-        ));
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                ApiError.of(
+                        "MALFORMED_JSON",
+                        "Malformed JSON request body"
+                )
+        );
     }
 
-    // -------- Helpers --------
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
+        log.error("Unhandled exception", ex);
 
-    private static ResponseEntity<ApiError> build(HttpStatus status, ApiError body) {
+        return respond(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                ApiError.of(
+                        "INTERNAL_ERROR",
+                        "Unexpected error"
+                )
+        );
+    }
+
+    private static ResponseEntity<ApiError> respond(HttpStatus status, ApiError body) {
         return ResponseEntity.status(status).body(body);
     }
 
-    private static boolean isEnumTarget(InvalidFormatException ife) {
-        return ife.getTargetType() != null && ife.getTargetType().isEnum();
-    }
-
-    private static Throwable rootCause(Throwable t) {
-        Throwable current = t;
+    private static Throwable getRootCause(Throwable throwable) {
+        Throwable current = throwable;
         while (current.getCause() != null && current.getCause() != current) {
             current = current.getCause();
         }
         return current;
     }
 
-    private static String lastFieldName(List<JsonMappingException.Reference> path) {
-        if (path == null || path.isEmpty()) return "unknown";
-
-        JsonMappingException.Reference last = path.get(path.size() - 1);
-        String name = last.getFieldName();
-        if (name != null && !name.isBlank()) return name;
-
-        int index = last.getIndex();
-        return (index >= 0) ? "[" + index + "]" : "unknown";
+    private static boolean isEnumTarget(InvalidFormatException ex) {
+        return ex.getTargetType() != null && ex.getTargetType().isEnum();
     }
 
-    private static List<String> enumValues(Class<?> enumType) {
+    private static String getLastFieldName(List<JsonMappingException.Reference> path) {
+        if (path == null || path.isEmpty()) {
+            return "unknown";
+        }
+
+        JsonMappingException.Reference last = path.get(path.size() - 1);
+        String fieldName = last.getFieldName();
+
+        if (fieldName != null && !fieldName.isBlank()) {
+            return fieldName;
+        }
+
+        int index = last.getIndex();
+        return index >= 0 ? "[" + index + "]" : "unknown";
+    }
+
+    private static List<String> getEnumValues(Class<?> enumType) {
         Object[] constants = enumType.getEnumConstants();
-        if (constants == null) return List.of();
-        return Arrays.stream(constants).map(Object::toString).toList();
+        if (constants == null) {
+            return List.of();
+        }
+
+        return Arrays.stream(constants)
+                .map(Object::toString)
+                .toList();
     }
 }

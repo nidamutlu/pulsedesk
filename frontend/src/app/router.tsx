@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Link,
   NavLink,
@@ -6,6 +7,8 @@ import {
   createBrowserRouter,
   useLocation,
 } from "react-router-dom";
+
+import { getAccessToken } from "../api/auth";
 
 import LoginPage from "../pages/Login/LoginPage";
 import DashboardPage from "../pages/Dashboard/DashboardPage";
@@ -16,6 +19,52 @@ import NotificationsPage from "../pages/Notifications/NotificationsPage";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
+}
+
+function useAccessTokenSnapshot() {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pulsedesk.accessToken" || e.key === "pulsedesk.refreshToken") {
+        setTick((t) => t + 1);
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return useMemo(() => {
+    void tick;
+    return getAccessToken();
+  }, [tick]);
+}
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const loc = useLocation();
+  const token = useAccessTokenSnapshot();
+
+  if (!token) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${loc.pathname}${loc.search}` }}
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
+  const token = useAccessTokenSnapshot();
+  if (token) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
 }
 
 function AppLayout() {
@@ -126,13 +175,24 @@ function NotFoundPage() {
 }
 
 export const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/dashboard" replace /> },
+  { path: "/", element: <Navigate to="/login" replace /> },
 
-  { path: "/login", element: <LoginPage /> },
+  {
+    path: "/login",
+    element: (
+      <RedirectIfAuthed>
+        <LoginPage />
+      </RedirectIfAuthed>
+    ),
+  },
 
   {
     path: "/",
-    element: <AppLayout />,
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
     children: [
       { path: "dashboard", element: <DashboardPage /> },
 

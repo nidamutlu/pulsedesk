@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ApiRequestError } from "../../api/http";
 import {
-  ApiRequestError,
   fetchNotifications,
   fetchUnreadCount,
   markAllNotificationsAsRead,
@@ -31,9 +32,23 @@ function titleFor(n: NotificationResponse) {
   return n.type;
 }
 
-export default function NotificationsPage() {
-  const userId = 2;
+function messageFromError(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    const d = err.details;
+    if (typeof d === "string") return d;
+    if (d && typeof d === "object") return JSON.stringify(d);
+    return err.message || `Request failed (${err.status})`;
+  }
 
+  if (err instanceof Error) return err.message || "Request failed";
+  return "Request failed";
+}
+
+function notifyBadgeUpdate() {
+  window.dispatchEvent(new Event("notifications-updated"));
+}
+
+export default function NotificationsPage() {
   const [items, setItems] = useState<NotificationResponse[]>([]);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -51,57 +66,57 @@ export default function NotificationsPage() {
 
     try {
       const [list, count] = await Promise.all([
-        fetchNotifications({ userId, unreadOnly, limit: 50 }),
-        fetchUnreadCount(userId),
+        fetchNotifications({ unreadOnly, limit: 50 }),
+        fetchUnreadCount(),
       ]);
+
       setItems(list);
       setUnreadCount(count);
     } catch (e) {
-      if (e instanceof ApiRequestError) {
-        setError(typeof e.body === "string" ? e.body : JSON.stringify(e.body));
-      } else {
-        setError((e as Error).message);
-      }
+      setError(messageFromError(e));
     } finally {
       setLoading(false);
     }
-  }, [userId, unreadOnly]);
+  }, [unreadOnly]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const onMarkRead = useCallback(
-    async (id: number) => {
-      setError(null);
-      setActionLoadingId(id);
-      try {
-        const updated = await markNotificationAsRead({ notificationId: id, userId });
-        setItems((prev) => prev.map((n) => (n.id === id ? updated : n)));
-        setUnreadCount((c) => Math.max(0, c - 1));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to mark as read");
-      } finally {
-        setActionLoadingId(null);
-      }
-    },
-    [userId]
-  );
+  const onMarkRead = useCallback(async (id: number) => {
+    setError(null);
+    setActionLoadingId(id);
+
+    try {
+      const updated = await markNotificationAsRead(id);
+
+      setItems((prev) => prev.map((n) => (n.id === id ? updated : n)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+      notifyBadgeUpdate();
+    } catch (e) {
+      setError(messageFromError(e));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }, []);
 
   const onMarkAllRead = useCallback(async () => {
     setError(null);
     setBulkLoading(true);
+
     try {
-      await markAllNotificationsAsRead(userId);
+      await markAllNotificationsAsRead();
+
       const nowIso = new Date().toISOString();
       setItems((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? nowIso })));
       setUnreadCount(0);
+      notifyBadgeUpdate();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to mark all as read");
+      setError(messageFromError(e));
     } finally {
       setBulkLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -153,13 +168,14 @@ export default function NotificationsPage() {
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
                   )}
+                  disabled={loading || bulkLoading}
                 >
                   {unreadOnly ? "Showing unread" : "Show unread"}
                 </button>
 
                 <button
                   type="button"
-                  onClick={onMarkAllRead}
+                  onClick={() => void onMarkAllRead()}
                   disabled={!hasUnread || bulkLoading || loading}
                   className={cx(
                     "rounded-xl px-3 py-2 text-xs font-semibold transition",
@@ -199,10 +215,7 @@ export default function NotificationsPage() {
                 const isActionLoading = actionLoadingId === n.id;
 
                 return (
-                  <div
-                    key={n.id}
-                    className={cx("px-6 py-5", isUnread && "bg-slate-50")}
-                  >
+                  <div key={n.id} className={cx("px-6 py-5", isUnread && "bg-slate-50")}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -214,9 +227,7 @@ export default function NotificationsPage() {
                           )}
                         </div>
 
-                        <div className="mt-1 text-sm text-slate-600">
-                          {n.message}
-                        </div>
+                        <div className="mt-1 text-sm text-slate-600">{n.message}</div>
 
                         <div className="mt-2 text-xs text-slate-500">
                           {formatDateTime(n.createdAt)}

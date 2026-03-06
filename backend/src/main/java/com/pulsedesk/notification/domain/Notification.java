@@ -38,7 +38,7 @@ public class Notification {
     @Column(nullable = false, length = 500)
     private String message;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     @Column(name = "read_at")
@@ -50,14 +50,19 @@ public class Notification {
             Ticket ticket,
             Comment comment,
             NotificationType type,
-            String message,
-            OffsetDateTime createdAt
+            String message
     ) {
         this.userId = userId;
         this.ticket = ticket;
         this.comment = comment;
         this.type = type;
         this.message = message;
-        this.createdAt = createdAt;
+    }
+
+    @PrePersist
+    void onCreate() {
+        if (this.createdAt == null) {
+            this.createdAt = OffsetDateTime.now();
+        }
     }
 }

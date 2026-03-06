@@ -1,54 +1,57 @@
 databaseChangeLog:
   - changeSet:
-      id: 001-create-ticket-table
-      author: nida
+      id: 004-create-ticket-audit-logs
+      author: pulsedesk
       changes:
         - createTable:
-            tableName: tickets
+            tableName: ticket_audit_logs
             columns:
               - column:
                   name: id
                   type: BIGSERIAL
                   constraints:
                     primaryKey: true
+                    primaryKeyName: pk_ticket_audit_logs
                     nullable: false
 
               - column:
-                  name: title
-                  type: VARCHAR(255)
-                  constraints:
-                    nullable: false
-
-              - column:
-                  name: description
-                  type: TEXT
-                  constraints:
-                    nullable: false
-
-              - column:
-                  name: status
-                  type: VARCHAR(50)
-                  constraints:
-                    nullable: false
-
-              - column:
-                  name: priority
-                  type: VARCHAR(50)
-                  constraints:
-                    nullable: false
-
-              - column:
-                  name: requester_id
+                  name: ticket_id
                   type: BIGINT
                   constraints:
                     nullable: false
 
               - column:
-                  name: assignee_id
-                  type: BIGINT
+                  name: action
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
 
               - column:
-                  name: team_id
+                  name: old_status
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+
+              - column:
+                  name: new_status
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+
+              - column:
+                  name: old_assignee_id
+                  type: BIGINT
+                  constraints:
+                    nullable: true
+
+              - column:
+                  name: new_assignee_id
+                  type: BIGINT
+                  constraints:
+                    nullable: true
+
+              - column:
+                  name: actor_id
                   type: BIGINT
                   constraints:
                     nullable: false
@@ -59,12 +62,9 @@ databaseChangeLog:
                   constraints:
                     nullable: false
 
+        - createIndex:
+            tableName: ticket_audit_logs
+            indexName: idx_ticket_audit_logs_ticket_id
+            columns:
               - column:
-                  name: updated_at
-                  type: TIMESTAMPTZ
-                  constraints:
-                    nullable: false
-
-              - column:
-                  name: resolved_at
-                  type: TIMESTAMPTZ
+                  name: ticket_id
