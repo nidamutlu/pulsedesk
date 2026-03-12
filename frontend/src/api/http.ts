@@ -54,6 +54,10 @@ function buildBodyAndHeaders(options: HttpOptions) {
 
   const body = options.body;
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  const isArrayBufferView =
+    typeof ArrayBuffer !== "undefined" &&
+    body != null &&
+    ArrayBuffer.isView(body);
 
   let finalBody: BodyInit | undefined;
 
@@ -64,7 +68,8 @@ function buildBodyAndHeaders(options: HttpOptions) {
     typeof body === "string" ||
     body instanceof URLSearchParams ||
     body instanceof Blob ||
-    body instanceof ArrayBuffer
+    body instanceof ArrayBuffer ||
+    isArrayBufferView
   ) {
     finalBody = body as BodyInit;
   } else {
@@ -99,7 +104,7 @@ async function doFetch(
 async function ensureFreshAccessToken(): Promise<string> {
   if (!refreshInFlight) {
     refreshInFlight = refreshAccessToken()
-      .then((r) => r.accessToken)
+      .then((response) => response.accessToken)
       .finally(() => {
         refreshInFlight = null;
       });
@@ -108,7 +113,25 @@ async function ensureFreshAccessToken(): Promise<string> {
   return refreshInFlight;
 }
 
-export async function http<T>(path: string, options: HttpOptions = {}): Promise<T> {
+function extractErrorMessage(details: unknown, status: number) {
+  if (details && typeof details === "object" && "message" in details) {
+    const message = (details as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+
+  if (typeof details === "string" && details.trim()) {
+    return details;
+  }
+
+  return `Request failed (${status})`;
+}
+
+export async function http<T>(
+  path: string,
+  options: HttpOptions = {}
+): Promise<T> {
   let response = await doFetch(path, options);
 
   const canRefresh =
@@ -119,8 +142,8 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
 
   if (canRefresh) {
     try {
-      const newAccess = await ensureFreshAccessToken();
-      response = await doFetch(path, options, newAccess);
+      const newAccessToken = await ensureFreshAccessToken();
+      response = await doFetch(path, options, newAccessToken);
     } catch {
       clearTokens();
       throw new ApiRequestError("Unauthorized", 401);
@@ -134,10 +157,7 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
 
   if (!response.ok) {
     const details = await readSafe(response);
-    const message =
-      (details && typeof details === "object" && (details as any).message) ||
-      (typeof details === "string" ? details : null) ||
-      `Request failed (${response.status})`;
+    const message = extractErrorMessage(details, response.status);
 
     throw new ApiRequestError(message, response.status, details);
   }

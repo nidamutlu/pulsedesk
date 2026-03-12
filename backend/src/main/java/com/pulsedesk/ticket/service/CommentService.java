@@ -1,6 +1,7 @@
 package com.pulsedesk.ticket.service;
 
 import com.pulsedesk.notification.service.NotificationService;
+import com.pulsedesk.security.AuthPrincipal;
 import com.pulsedesk.ticket.api.dto.CommentCreateRequest;
 import com.pulsedesk.ticket.api.dto.CommentResponse;
 import com.pulsedesk.ticket.domain.Comment;
@@ -8,67 +9,77 @@ import com.pulsedesk.ticket.domain.Ticket;
 import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.repository.CommentRepository;
 import com.pulsedesk.ticket.repository.TicketRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 
 @Service
+@Transactional
+@RequiredArgsConstructor
 public class CommentService {
 
     private final TicketRepository ticketRepository;
     private final CommentRepository commentRepository;
     private final NotificationService notificationService;
-
-    public CommentService(
-            TicketRepository ticketRepository,
-            CommentRepository commentRepository,
-            NotificationService notificationService
-    ) {
-        this.ticketRepository = ticketRepository;
-        this.commentRepository = commentRepository;
-        this.notificationService = notificationService;
-    }
+    private final TicketService ticketService;
 
     @Transactional(readOnly = true)
-    public List<CommentResponse> listComments(Long ticketId) {
-        return commentRepository.findByTicketIdOrderByCreatedAtAsc(ticketId)
-                .stream()
-                .map(CommentService::toResponse)
-                .toList();
-    }
+    public List<CommentResponse> listComments(AuthPrincipal currentUser, Long ticketId) {
+        requireAuthenticated(currentUser);
 
-    @Transactional
-    public CommentResponse addComment(Long ticketId, Long authorId, CommentCreateRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
 
-        if (authorId == null || authorId <= 0) {
-            throw new IllegalArgumentException("authorId is required");
-        }
+        ticketService.getTicketById(currentUser, ticket.getId());
 
-        String body = request.body() == null ? "" : request.body().trim();
-        if (body.isBlank()) {
-            throw new IllegalArgumentException("body is required");
-        }
+        return commentRepository.findByTicket_IdOrderByCreatedAtAsc(ticket.getId())
+                .stream()
+                .map(CommentResponse::from)
+                .toList();
+    }
+
+    public CommentResponse addComment(
+            AuthPrincipal currentUser,
+            Long ticketId,
+            CommentCreateRequest request
+    ) {
+        requireAuthenticated(currentUser);
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new TicketNotFoundException(ticketId));
+
+        ticketService.getTicketById(currentUser, ticket.getId());
+
+        String body = normalizeBody(request);
 
         Comment saved = commentRepository.save(
-                new Comment(ticket, authorId, body, OffsetDateTime.now())
+                new Comment(ticket, currentUser.userId(), body)
         );
 
         notificationService.notifyOnComment(saved);
 
-        return toResponse(saved);
+        return CommentResponse.from(saved);
     }
 
-    private static CommentResponse toResponse(Comment c) {
-        return new CommentResponse(
-                c.getId(),
-                c.getTicket().getId(),
-                c.getAuthorId(),
-                c.getBody(),
-                c.getCreatedAt()
-        );
+    private static void requireAuthenticated(AuthPrincipal currentUser) {
+        if (currentUser == null || currentUser.userId() == null) {
+            throw new AccessDeniedException("Unauthenticated");
+        }
+    }
+
+    private static String normalizeBody(CommentCreateRequest request) {
+        if (request == null || request.body() == null) {
+            throw new IllegalArgumentException("Comment body is required");
+        }
+
+        String body = request.body().trim();
+        if (body.isBlank()) {
+            throw new IllegalArgumentException("Comment body must not be blank");
+        }
+
+        return body;
     }
 }

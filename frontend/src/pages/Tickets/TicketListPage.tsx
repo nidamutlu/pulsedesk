@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { getCurrentUser } from "../../api/auth";
 import { ApiRequestError } from "../../api/http";
 import { fetchTickets } from "../../api/tickets";
 import type { PageResponse, Ticket, TicketListParams } from "../../api/tickets";
@@ -11,13 +12,38 @@ function cx(...parts: Array<string | false | null | undefined>) {
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-GB", {
     day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
+}
+
+function truncate(text?: string | null, max = 140) {
+  if (!text) return "—";
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trim()}…`;
+}
+
+function getTeamLabel(teamId?: number | null) {
+  switch (teamId) {
+    case 1:
+      return "NETWORK / ACCESS";
+    case 2:
+      return "INFRA / DEVOPS";
+    case 3:
+      return "APPLICATION / BACKEND";
+    default:
+      return "UNASSIGNED TEAM";
+  }
+}
+
+function formatPriority(value: string) {
+  return value.charAt(0) + value.slice(1).toLowerCase();
 }
 
 function Badge({
@@ -56,12 +82,29 @@ function Badge({
           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
           : "border-slate-200 bg-white text-slate-700";
 
+  return <span className={cx(base, cls)}>{formatPriority(value)}</span>;
+}
+
+function TeamBadge({ teamId }: { teamId?: number | null }) {
+  const label = getTeamLabel(teamId);
+
+  const cls =
+    teamId === 1
+      ? "border-cyan-200 bg-cyan-50 text-cyan-700"
+      : teamId === 2
+        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+        : teamId === 3
+          ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+          : "border-slate-200 bg-slate-50 text-slate-700";
+
   return (
-    <span className={cx(base, cls)}>
-      {value === "HIGH" && "🔴 "}
-      {value === "MEDIUM" && "🟡 "}
-      {value === "LOW" && "🟢 "}
-      {value}
+    <span
+      className={cx(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold",
+        cls
+      )}
+    >
+      {label}
     </span>
   );
 }
@@ -71,15 +114,13 @@ function Skeleton({ className }: { className: string }) {
 }
 
 function getApiErrorMessage(e: ApiRequestError) {
-  const d = e.details as any;
+  const d = e.details as
+    | { code?: string; message?: string }
+    | null
+    | undefined;
 
-  const code =
-    d && typeof d === "object" && typeof d.code === "string" ? d.code : null;
-
-  const msg =
-    d && typeof d === "object" && typeof d.message === "string"
-      ? d.message
-      : e.message;
+  const code = typeof d?.code === "string" ? d.code : null;
+  const msg = typeof d?.message === "string" ? d.message : e.message;
 
   return `${e.status}${code ? ` • ${code}` : ""} • ${msg}`;
 }
@@ -89,6 +130,8 @@ type PriorityFilter = Ticket["priority"] | "ALL";
 
 export default function TicketListPage() {
   const nav = useNavigate();
+  const currentUser = getCurrentUser();
+  const canCreateTicket = currentUser?.role === "REQUESTER";
 
   const [page, setPage] = useState(0);
   const [size] = useState(10);
@@ -135,10 +178,13 @@ export default function TicketListPage() {
           setError(getApiErrorMessage(e));
           return;
         }
+
         setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -152,13 +198,25 @@ export default function TicketListPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-            Tickets
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Filter, search, and open ticket details.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+              Tickets
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Filter, search, and open ticket details.
+            </p>
+          </div>
+
+          {canCreateTicket && (
+            <button
+              type="button"
+              onClick={() => nav("/tickets/new")}
+              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            >
+              + Create Ticket
+            </button>
+          )}
         </div>
 
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -295,7 +353,7 @@ export default function TicketListPage() {
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md hover:border-slate-300"
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
@@ -303,6 +361,10 @@ export default function TicketListPage() {
                       <div className="mt-3 flex gap-2">
                         <Skeleton className="h-6 w-20 rounded-full" />
                         <Skeleton className="h-6 w-24 rounded-full" />
+                        <Skeleton className="h-6 w-32 rounded-full" />
+                      </div>
+                      <div className="mt-3">
+                        <Skeleton className="h-4 w-4/5" />
                       </div>
                       <div className="mt-3">
                         <Skeleton className="h-4 w-2/5" />
@@ -323,13 +385,16 @@ export default function TicketListPage() {
               <div className="mt-2 text-sm text-slate-600">
                 Try changing filters or create a new ticket.
               </div>
-              <button
-                type="button"
-                onClick={() => nav("/tickets/new")}
-                className="mt-6 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                + Create Ticket
-              </button>
+
+              {canCreateTicket && (
+                <button
+                  type="button"
+                  onClick={() => nav("/tickets/new")}
+                  className="mt-6 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  + Create Ticket
+                </button>
+              )}
             </div>
           )}
 
@@ -338,10 +403,10 @@ export default function TicketListPage() {
               {(data?.content ?? []).map((t) => (
                 <div
                   key={t.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md hover:border-slate-300"
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold text-slate-500">
                         Ticket #{t.id}
                       </div>
@@ -350,13 +415,26 @@ export default function TicketListPage() {
                         {t.title}
                       </div>
 
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        {truncate(t.description, 170)}
+                      </p>
+
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <Badge kind="status" value={t.status} />
                         <Badge kind="priority" value={t.priority} />
+                        <TeamBadge teamId={t.teamId} />
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-500">
-                        Created {formatDate(t.createdAt)} • Updated{" "}
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span>Requester #{t.requesterId}</span>
+                        <span>
+                          Assignee {t.assigneeId ? `#${t.assigneeId}` : "—"}
+                        </span>
+                        <span>Team #{t.teamId}</span>
+                      </div>
+
+                      <div className="mt-2 text-xs text-slate-500">
+                        Opened {formatDate(t.createdAt)} • Last updated{" "}
                         {formatDate(t.updatedAt)}
                       </div>
                     </div>

@@ -26,10 +26,14 @@ function formatDateTime(iso: string) {
   });
 }
 
+function prettifyNotificationType(type: string) {
+  if (type === "MENTION") return "Mention";
+  if (type === "COMMENT_ADDED") return "New comment";
+  return String(type).replaceAll("_", " ");
+}
+
 function titleFor(n: NotificationResponse) {
-  if (n.type === "MENTION") return "Mention";
-  if (n.type === "COMMENT_ADDED") return "New comment";
-  return n.type;
+  return prettifyNotificationType(n.type);
 }
 
 function messageFromError(err: unknown): string {
@@ -46,6 +50,38 @@ function messageFromError(err: unknown): string {
 
 function notifyBadgeUpdate() {
   window.dispatchEvent(new Event("notifications-updated"));
+}
+
+function NotificationTypeBadge({ type }: { type: NotificationResponse["type"] }) {
+  const cls =
+    type === "MENTION"
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : type === "COMMENT_ADDED"
+        ? "border-cyan-200 bg-cyan-50 text-cyan-700"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold",
+        cls
+      )}
+    >
+      {prettifyNotificationType(type)}
+    </span>
+  );
+}
+
+function ReadStateBadge({ unread }: { unread: boolean }) {
+  return unread ? (
+    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+      Unread
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+      Read
+    </span>
+  );
 }
 
 export default function NotificationsPage() {
@@ -128,10 +164,12 @@ export default function NotificationsPage() {
             </h1>
             <p className="mt-1 text-sm text-slate-600">
               Updates and events related to your workspace.
-              <span className="ml-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+            </p>
+            <div className="mt-3">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
                 Unread: {unreadCount}
               </span>
-            </p>
+            </div>
           </div>
 
           <Link
@@ -215,31 +253,38 @@ export default function NotificationsPage() {
                 const isActionLoading = actionLoadingId === n.id;
 
                 return (
-                  <div key={n.id} className={cx("px-6 py-5", isUnread && "bg-slate-50")}>
+                  <div
+                    key={n.id}
+                    className={cx("px-6 py-5", isUnread && "bg-slate-50")}
+                  >
                     <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <div className="truncate text-sm font-semibold text-slate-900">
                             {titleFor(n)}
                           </div>
-                          {isUnread && (
-                            <span className="inline-flex h-2 w-2 rounded-full bg-blue-500" />
-                          )}
+                          <NotificationTypeBadge type={n.type} />
+                          <ReadStateBadge unread={isUnread} />
                         </div>
 
-                        <div className="mt-1 text-sm text-slate-600">{n.message}</div>
+                        <div className="mt-2 text-sm leading-6 text-slate-600">
+                          {n.message}
+                        </div>
 
-                        <div className="mt-2 text-xs text-slate-500">
-                          {formatDateTime(n.createdAt)}
-                          {n.ticketId ? ` • Ticket #${n.ticketId}` : ""}
+                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                          <span>{formatDateTime(n.createdAt)}</span>
+                          {n.ticketId ? (
+                            <Link
+                              to={`/tickets/${n.ticketId}`}
+                              className="font-medium text-slate-700 hover:text-slate-900"
+                            >
+                              Ticket #{n.ticketId}
+                            </Link>
+                          ) : null}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <div className="text-xs font-semibold text-slate-500">
-                          {isUnread ? "NEW" : "READ"}
-                        </div>
-
                         <button
                           type="button"
                           onClick={() => void onMarkRead(n.id)}

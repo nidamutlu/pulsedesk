@@ -8,5 +8,5 @@ import java.util.List;
 public interface TicketAuditLogRepository
         extends JpaRepository<TicketAuditLog, Long> {
 
-    List<TicketAuditLog> findByTicketIdOrderByCreatedAtDesc(Long ticketId);
+    List<TicketAuditLog> findByTicketIdOrderByCreatedAtAsc(Long ticketId);
 }

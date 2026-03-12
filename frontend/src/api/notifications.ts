@@ -13,26 +13,38 @@ export type NotificationResponse = {
   readAt: string | null;
 };
 
+export type NotificationListParams = {
+  unreadOnly?: boolean;
+  limit?: number;
+};
+
 type UnreadCountResponse = {
   count: number;
 };
 
-export async function fetchNotifications(params?: {
-  unreadOnly?: boolean;
-  limit?: number;
-}): Promise<NotificationResponse[]> {
-  const q = new URLSearchParams();
+function buildQuery(
+  params: Record<string, string | number | boolean | undefined | null>
+) {
+  const searchParams = new URLSearchParams();
 
-  if (params?.unreadOnly !== undefined) {
-    q.set("unreadOnly", String(params.unreadOnly));
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    searchParams.set(key, String(value));
   }
 
-  if (params?.limit !== undefined) {
-    q.set("limit", String(params.limit));
-  }
+  const queryString = searchParams.toString();
+  return queryString ? `?${queryString}` : "";
+}
 
-  const qs = q.toString();
-  return http<NotificationResponse[]>(`/notifications${qs ? `?${qs}` : ""}`);
+export async function fetchNotifications(
+  params: NotificationListParams = {}
+): Promise<NotificationResponse[]> {
+  const query = buildQuery({
+    unreadOnly: params.unreadOnly,
+    limit: params.limit,
+  });
+
+  return http<NotificationResponse[]>(`/notifications${query}`);
 }
 
 export async function fetchUnreadCount(): Promise<number> {

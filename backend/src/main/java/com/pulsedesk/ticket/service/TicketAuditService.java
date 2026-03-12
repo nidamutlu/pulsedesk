@@ -17,11 +17,10 @@ public class TicketAuditService {
     private final TicketAuditLogRepository auditLogRepository;
     private final TicketService ticketService;
 
-    public List<TicketAuditLogResponse> listAuditLogs(AuthPrincipal me, Long ticketId) {
-        ticketService.getTicketById(me, ticketId);
+    public List<TicketAuditLogResponse> listAuditLogs(AuthPrincipal currentUser, Long ticketId) {
+        ticketService.getTicketById(currentUser, ticketId);
 
-        return auditLogRepository
-                .findByTicketIdOrderByCreatedAtDesc(ticketId)
+        return auditLogRepository.findByTicketIdOrderByCreatedAtAsc(ticketId)
                 .stream()
                 .map(TicketAuditLogResponse::from)
                 .toList();

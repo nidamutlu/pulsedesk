@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-seed-ticket-audit-logs
+      author: nida
+      context: dev
+      changes:
+        - insert:
+            tableName: ticket_audit_logs
+            columns:
+              - column: { name: ticket_id, valueNumeric: 1 }
+              - column: { name: action, value: "STATUS_CHANGE" }
+              - column: { name: old_status, value: "OPEN" }
+              - column: { name: new_status, value: "IN_PROGRESS" }
+              - column: { name: old_assignee_id, valueNumeric: null }
+              - column: { name: new_assignee_id, valueNumeric: 2 }
+              - column: { name: actor_id, valueNumeric: 2 }
+              - column: { name: created_at, value: "2026-03-02T18:00:20Z" }
+
+        - insert:
+            tableName: ticket_audit_logs
+            columns:
+              - column: { name: ticket_id, valueNumeric: 8 }
+              - column: { name: action, value: "STATUS_CHANGE" }
+              - column: { name: old_status, value: "OPEN" }
+              - column: { name: new_status, value: "IN_PROGRESS" }
+              - column: { name: old_assignee_id, valueNumeric: null }
+              - column: { name: new_assignee_id, valueNumeric: 4 }
+              - column: { name: actor_id, valueNumeric: 4 }
+              - column: { name: created_at, value: "2026-02-14T13:00:00Z" }

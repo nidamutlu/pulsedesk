@@ -9,7 +9,7 @@ public class TicketTransitionInvalidException extends RuntimeException {
     private final String transition;
 
     public TicketTransitionInvalidException(Long ticketId, String transition) {
-        super("Invalid transition: " + transition);
+        super("Ticket status transition is not allowed");
         this.ticketId = ticketId;
         this.transition = transition;
     }

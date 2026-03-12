@@ -16,7 +16,11 @@ export default function LoginPage() {
     e.preventDefault();
 
     const u = username.trim();
-    if (!u || !password) return;
+
+    if (!u || !password) {
+      setError("Username and password are required.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -68,7 +72,10 @@ export default function LoginPage() {
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="Enter your username"
                   autoComplete="username"
                   disabled={loading}
@@ -84,7 +91,10 @@ export default function LoginPage() {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="Enter your password"
                   autoComplete="current-password"
                   disabled={loading}

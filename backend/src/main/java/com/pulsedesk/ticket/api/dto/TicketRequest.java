@@ -2,7 +2,6 @@ package com.pulsedesk.ticket.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.pulsedesk.ticket.domain.TicketPriority;
-import com.pulsedesk.ticket.domain.TicketStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,10 +16,7 @@ public class TicketRequest {
 
     private String title;
     private String description;
-
     private TicketPriority priority;
-    private TicketStatus status;
-
     private Long assigneeId;
     private Long teamId;
 }

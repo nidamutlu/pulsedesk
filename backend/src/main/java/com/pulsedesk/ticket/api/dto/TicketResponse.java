@@ -3,13 +3,14 @@ package com.pulsedesk.ticket.api.dto;
 import com.pulsedesk.ticket.domain.Ticket;
 import com.pulsedesk.ticket.domain.TicketPriority;
 import com.pulsedesk.ticket.domain.TicketStatus;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
 
 @Getter
-@NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TicketResponse {
 
     private Long id;
@@ -25,18 +26,20 @@ public class TicketResponse {
     private OffsetDateTime resolvedAt;
 
     public static TicketResponse from(Ticket ticket) {
-        TicketResponse response = new TicketResponse();
-        response.id = ticket.getId();
-        response.title = ticket.getTitle();
-        response.description = ticket.getDescription();
-        response.status = ticket.getStatus();
-        response.priority = ticket.getPriority();
-        response.requesterId = ticket.getRequesterId();
-        response.assigneeId = ticket.getAssigneeId();
-        response.teamId = ticket.getTeamId();
-        response.createdAt = ticket.getCreatedAt();
-        response.updatedAt = ticket.getUpdatedAt();
-        response.resolvedAt = ticket.getResolvedAt();
-        return response;
+        TicketResponse dto = new TicketResponse();
+
+        dto.id = ticket.getId();
+        dto.title = ticket.getTitle();
+        dto.description = ticket.getDescription();
+        dto.status = ticket.getStatus();
+        dto.priority = ticket.getPriority();
+        dto.requesterId = ticket.getRequesterId();
+        dto.assigneeId = ticket.getAssigneeId();
+        dto.teamId = ticket.getTeamId();
+        dto.createdAt = ticket.getCreatedAt();
+        dto.updatedAt = ticket.getUpdatedAt();
+        dto.resolvedAt = ticket.getResolvedAt();
+
+        return dto;
     }
 }

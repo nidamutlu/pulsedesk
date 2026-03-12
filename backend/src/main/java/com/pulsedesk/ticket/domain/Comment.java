@@ -30,10 +30,16 @@ public class Comment {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
-    public Comment(Ticket ticket, Long authorId, String body, OffsetDateTime createdAt) {
+    public Comment(Ticket ticket, Long authorId, String body) {
         this.ticket = ticket;
         this.authorId = authorId;
         this.body = body;
-        this.createdAt = createdAt;
+    }
+
+    @PrePersist
+    void prePersist() {
+        if (createdAt == null) {
+            createdAt = OffsetDateTime.now();
+        }
     }
 }

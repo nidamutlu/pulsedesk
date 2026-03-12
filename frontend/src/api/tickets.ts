@@ -54,18 +54,20 @@ export type PageResponse<T> = {
   last: boolean;
 };
 
+export type TicketSortField = "id" | "createdAt" | "updatedAt" | "priority";
+
 export type TicketListParams = {
   page?: number;
   size?: number;
-  sortField?: "createdAt" | "updatedAt" | "priority";
+  sortField?: TicketSortField;
   sortDir?: "asc" | "desc";
   status?: TicketStatus;
   priority?: TicketPriority;
   assigneeId?: number;
+  teamId?: number;
   q?: string;
   createdFrom?: string;
   createdTo?: string;
-  teamId?: number;
 };
 
 export type TicketCreateRequest = {
@@ -87,17 +89,19 @@ export type TicketCommentCreateRequest = {
 function buildQuery(
   params: Record<string, string | number | boolean | undefined | null>
 ) {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === "") continue;
-    sp.set(k, String(v));
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    searchParams.set(key, String(value));
   }
-  const qs = sp.toString();
-  return qs ? `?${qs}` : "";
+
+  const queryString = searchParams.toString();
+  return queryString ? `?${queryString}` : "";
 }
 
-function pickSignal(init?: RequestInit) {
-  return init?.signal ? { signal: init.signal } : undefined;
+function withSignal(init?: RequestInit) {
+  return init?.signal ? { signal: init.signal } : {};
 }
 
 // ---- Tickets ----
@@ -120,21 +124,21 @@ export async function fetchTickets(
     createdTo,
   } = params;
 
-  const qs = buildQuery({
+  const query = buildQuery({
     page,
     size,
     sort: `${sortField},${sortDir}`,
     status,
     priority,
     assigneeId,
+    teamId,
     q,
     createdFrom,
     createdTo,
-    teamId,
   });
 
-  return http<PageResponse<Ticket>>(`/tickets${qs}`, {
-    ...(pickSignal(init) ?? {}),
+  return http<PageResponse<Ticket>>(`/tickets${query}`, {
+    ...withSignal(init),
   });
 }
 
@@ -143,7 +147,7 @@ export async function fetchTicketById(
   init?: RequestInit
 ): Promise<Ticket> {
   return http<Ticket>(`/tickets/${id}`, {
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }
 
@@ -154,7 +158,7 @@ export async function createTicket(
   return http<Ticket>("/tickets", {
     method: "POST",
     body,
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }
 
@@ -168,7 +172,7 @@ export async function transitionTicket(
   return http<Ticket>(`/tickets/${id}/transition`, {
     method: "POST",
     body: payload,
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }
 
@@ -177,7 +181,7 @@ export async function fetchTicketAuditLogs(
   init?: RequestInit
 ): Promise<TicketAuditLog[]> {
   return http<TicketAuditLog[]>(`/tickets/${id}/audit-logs`, {
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }
 
@@ -188,7 +192,7 @@ export async function fetchTicketComments(
   init?: RequestInit
 ): Promise<TicketComment[]> {
   return http<TicketComment[]>(`/tickets/${ticketId}/comments`, {
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }
 
@@ -202,6 +206,6 @@ export async function createTicketComment(
   return http<TicketComment>(`/tickets/${ticketId}/comments`, {
     method: "POST",
     body: payload,
-    ...(pickSignal(init) ?? {}),
+    ...withSignal(init),
   });
 }

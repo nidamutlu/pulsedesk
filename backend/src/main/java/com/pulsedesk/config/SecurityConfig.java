@@ -104,14 +104,12 @@ public class SecurityConfig {
             return;
         }
 
-        response.resetBuffer();
         response.setStatus(status);
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
         objectMapper.writeValue(response.getWriter(), body);
         response.getWriter().flush();
-        response.flushBuffer();
     }
 
     @Bean

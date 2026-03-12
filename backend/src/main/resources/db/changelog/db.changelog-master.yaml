@@ -22,3 +22,7 @@ databaseChangeLog:
   - include:
       file: 006-create-notifications.yaml
       relativeToChangelogFile: true
+
+  - include:
+      file: 007-seed-ticket-audit-logs.yaml
+      relativeToChangelogFile: true

@@ -29,11 +29,13 @@ public class TicketAuditLog {
     @Column(nullable = false, length = 50)
     private Action action;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "old_status", length = 50)
-    private String oldStatus;
+    private TicketStatus oldStatus;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "new_status", length = 50)
-    private String newStatus;
+    private TicketStatus newStatus;
 
     @Column(name = "old_assignee_id")
     private Long oldAssigneeId;
@@ -48,29 +50,39 @@ public class TicketAuditLog {
     private OffsetDateTime createdAt;
 
     @PrePersist
-    void prePersist() {
+    void ensureCreatedAt() {
         if (createdAt == null) {
             createdAt = OffsetDateTime.now();
         }
     }
 
-    public static TicketAuditLog statusChange(Long ticketId, TicketStatus from, TicketStatus to, Long actorId) {
-        TicketAuditLog l = new TicketAuditLog();
-        l.ticketId = ticketId;
-        l.action = Action.STATUS_CHANGE;
-        l.oldStatus = from != null ? from.name() : null;
-        l.newStatus = to != null ? to.name() : null;
-        l.actorId = actorId;
-        return l;
+    public static TicketAuditLog statusChange(
+            Long ticketId,
+            TicketStatus from,
+            TicketStatus to,
+            Long actorId
+    ) {
+        TicketAuditLog log = new TicketAuditLog();
+        log.ticketId = ticketId;
+        log.action = Action.STATUS_CHANGE;
+        log.oldStatus = from;
+        log.newStatus = to;
+        log.actorId = actorId;
+        return log;
     }
 
-    public static TicketAuditLog assigneeChange(Long ticketId, Long oldA, Long newA, Long actorId) {
-        TicketAuditLog l = new TicketAuditLog();
-        l.ticketId = ticketId;
-        l.action = Action.ASSIGNEE_CHANGE;
-        l.oldAssigneeId = oldA;
-        l.newAssigneeId = newA;
-        l.actorId = actorId;
-        return l;
+    public static TicketAuditLog assigneeChange(
+            Long ticketId,
+            Long oldAssignee,
+            Long newAssignee,
+            Long actorId
+    ) {
+        TicketAuditLog log = new TicketAuditLog();
+        log.ticketId = ticketId;
+        log.action = Action.ASSIGNEE_CHANGE;
+        log.oldAssigneeId = oldAssignee;
+        log.newAssigneeId = newAssignee;
+        log.actorId = actorId;
+        return log;
     }
 }

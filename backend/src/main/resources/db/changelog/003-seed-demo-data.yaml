@@ -79,7 +79,7 @@ databaseChangeLog:
               - column: { name: team_id, valueNumeric: 3 }
 
         # =========================================================
-        # GROUP 1 - requester1 / team 1 / agent1
+        # TEAM 1 - NETWORK / ACCESS
         # requester1 = 3, agent1 = 2
         # =========================================================
         - insert:
@@ -156,8 +156,21 @@ databaseChangeLog:
               - column: { name: created_at, value: "2026-02-17T06:00:00Z" }
               - column: { name: updated_at, value: "2026-02-18T06:30:00Z" }
 
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Email notifications not delivered" }
+              - column: { name: description, value: "Users report that system email notifications are not delivered. Need to verify SMTP configuration and queue processing." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 3 }
+              - column: { name: assignee_id, valueNumeric: 2 }
+              - column: { name: team_id, valueNumeric: 1 }
+              - column: { name: created_at, value: "2026-02-19T10:15:00Z" }
+              - column: { name: updated_at, value: "2026-02-19T10:15:00Z" }
+
         # =========================================================
-        # GROUP 2 - requester2 / team 2 / agent2
+        # TEAM 2 - INFRASTRUCTURE / DEVOPS
         # requester2 = 6, agent2 = 4
         # =========================================================
         - insert:
@@ -250,7 +263,7 @@ databaseChangeLog:
               - column: { name: resolved_at, value: "2026-02-11T07:10:00Z" }
 
         # =========================================================
-        # GROUP 3 - requester3 / team 3 / agent3
+        # TEAM 3 - APPLICATION / BACKEND
         # requester3 = 7, agent3 = 5
         # =========================================================
         - insert:
@@ -330,6 +343,18 @@ databaseChangeLog:
               - column: { name: created_at, value: "2026-02-08T11:20:00Z" }
               - column: { name: updated_at, value: "2026-02-08T12:00:00Z" }
 
+        - insert:
+            tableName: tickets
+            columns:
+              - column: { name: title, value: "Mobile app session expires too quickly" }
+              - column: { name: description, value: "Users are logged out after a few minutes of inactivity. Verify access token TTL and refresh token flow." }
+              - column: { name: status, value: "OPEN" }
+              - column: { name: priority, value: "MEDIUM" }
+              - column: { name: requester_id, valueNumeric: 7 }
+              - column: { name: team_id, valueNumeric: 3 }
+              - column: { name: created_at, value: "2026-02-17T10:20:00Z" }
+              - column: { name: updated_at, value: "2026-02-17T10:20:00Z" }
+
   - changeSet:
       id: 003-seed-demo-data-sequences
       author: nida
@@ -339,3 +364,4 @@ databaseChangeLog:
             sql: "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1), true);"
         - sql:
             sql: "SELECT setval(pg_get_serial_sequence('tickets', 'id'), COALESCE((SELECT MAX(id) FROM tickets), 1), true);"
+

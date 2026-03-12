@@ -78,10 +78,7 @@ public class JwtService {
     }
 
     public Long getUserId(Claims claims) {
-        Long uid = asLong(claims.get(CLAIM_UID));
-        if (uid != null) return uid;
-
-        return asLong(claims.get("userId"));
+        return asLong(claims.get(CLAIM_UID));
     }
 
     public UserRole getRole(Claims claims) {
@@ -101,7 +98,10 @@ public class JwtService {
     }
 
     private static Long asLong(Object raw) {
-        if (raw instanceof Number n) return n.longValue();
+        if (raw instanceof Number n) {
+            return n.longValue();
+        }
+
         if (raw instanceof String s) {
             try {
                 return Long.parseLong(s);
@@ -109,6 +109,7 @@ public class JwtService {
                 return null;
             }
         }
+
         return null;
     }
 }

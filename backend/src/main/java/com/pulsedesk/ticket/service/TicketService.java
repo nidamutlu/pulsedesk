@@ -30,38 +30,33 @@ public class TicketService {
     private final TicketRepository ticketRepository;
     private final TicketAuditLogRepository auditLogRepository;
 
-    public TicketResponse createTicket(AuthPrincipal me, TicketRequest request) {
-        requireAuth(me);
+    public TicketResponse createTicket(AuthPrincipal currentUser, TicketRequest request) {
+        requireAuthenticated(currentUser);
+        validateCreateRequest(request);
 
-        requireNonBlank(request.getTitle(), "title is required");
-        requireNonBlank(request.getDescription(), "description is required");
-        requireNonNull(request.getPriority(), "priority is required");
-        requireNonNull(request.getTeamId(), "teamId is required");
+        Long requestedTeamId = request.getTeamId();
 
-        Long requesterId = me.userId();
+        if (currentUser.isAgent()) {
+            Long currentTeamId = requireAgentTeam(currentUser);
+            if (!currentTeamId.equals(requestedTeamId)) {
+                throw new AccessDeniedException("Agent cannot create tickets for another team");
+            }
+        }
 
         Ticket ticket = new Ticket(
                 request.getTitle().trim(),
                 request.getDescription().trim(),
                 request.getPriority(),
-                requesterId,
-                request.getTeamId()
+                currentUser.userId(),
+                requestedTeamId
         );
 
         OffsetDateTime now = OffsetDateTime.now();
-        ticket.setStatus(TicketStatus.OPEN);
-        ticket.setCreatedAt(now);
-        ticket.setUpdatedAt(now);
+        ticket.initializeTimestamps(now);
 
         if (request.getAssigneeId() != null) {
-            if (!me.isAdmin() && !me.isAgent()) {
-                throw new AccessDeniedException("Requester cannot set assignee");
-            }
-            ticket.setAssigneeId(request.getAssigneeId());
-        }
-
-        if (me.isAgent() && me.teamId() != null && !me.teamId().equals(request.getTeamId())) {
-            throw new AccessDeniedException("Agent cannot create ticket for another team");
+            ensureCanAssign(currentUser);
+            ticket.assignTo(request.getAssigneeId());
         }
 
         Ticket saved = ticketRepository.save(ticket);
@@ -70,197 +65,260 @@ public class TicketService {
 
     @Transactional(readOnly = true)
     public Page<TicketResponse> listTickets(
-            AuthPrincipal me,
+            AuthPrincipal currentUser,
             TicketStatus status,
             TicketPriority priority,
             Long assigneeId,
             Long teamId,
-            String q,
+            String query,
             OffsetDateTime createdFrom,
             OffsetDateTime createdTo,
             Pageable pageable
     ) {
-        requireAuth(me);
+        requireAuthenticated(currentUser);
 
         Specification<Ticket> spec = Specification
                 .where(TicketSpecifications.hasStatus(status))
                 .and(TicketSpecifications.hasPriority(priority))
                 .and(TicketSpecifications.hasAssignee(assigneeId))
-                .and(TicketSpecifications.queryText(q))
+                .and(TicketSpecifications.queryText(query))
                 .and(TicketSpecifications.createdBetween(createdFrom, createdTo));
 
-        if (me.isAdmin()) {
+        if (currentUser.isAdmin()) {
             spec = spec.and(TicketSpecifications.hasTeam(teamId));
-        } else if (me.isAgent()) {
-            if (me.teamId() == null) throw new AccessDeniedException("Agent has no team");
-            spec = spec.and(TicketSpecifications.hasTeam(me.teamId()));
+        } else if (currentUser.isAgent()) {
+            Long currentTeamId = requireAgentTeam(currentUser);
+
+            if (teamId != null && !teamId.equals(currentTeamId)) {
+                throw new AccessDeniedException("Agent cannot query another team");
+            }
+
+            spec = spec.and(TicketSpecifications.hasTeam(currentTeamId));
         } else {
-            spec = spec.and(TicketSpecifications.hasRequester(me.userId()));
+            spec = spec.and(TicketSpecifications.hasRequester(currentUser.userId()));
         }
 
-        return ticketRepository.findAll(spec, pageable).map(TicketResponse::from);
+        return ticketRepository.findAll(spec, pageable)
+                .map(TicketResponse::from);
     }
 
     @Transactional(readOnly = true)
-    public TicketResponse getTicketById(AuthPrincipal me, Long id) {
-        requireAuth(me);
+    public TicketResponse getTicketById(AuthPrincipal currentUser, Long ticketId) {
+        requireAuthenticated(currentUser);
 
-        Ticket ticket = ticketRepository.findById(id)
-                .orElseThrow(() -> new TicketNotFoundException(id));
-
-        assertCanView(me, ticket);
+        Ticket ticket = findTicketOrThrow(ticketId);
+        assertCanView(currentUser, ticket);
 
         return TicketResponse.from(ticket);
     }
 
-    public TicketResponse updateTicket(AuthPrincipal me, Long id, TicketRequest request) {
-        requireAuth(me);
+    public TicketResponse updateTicket(AuthPrincipal currentUser, Long ticketId, TicketRequest request) {
+        requireAuthenticated(currentUser);
 
-        Ticket ticket = ticketRepository.findById(id)
-                .orElseThrow(() -> new TicketNotFoundException(id));
+        Ticket ticket = findTicketOrThrow(ticketId);
+        assertCanMutate(currentUser, ticket);
+        validateUpdateRequest(currentUser, ticket, request);
 
-        assertCanMutate(me, ticket);
-
-        if (request.getStatus() != null) {
-            throw new IllegalArgumentException(
-                    "Status updates are not allowed via PATCH. Use /tickets/{id}/transition."
-            );
-        }
+        String updatedTitle = resolveUpdatedTitle(ticket, request);
+        String updatedDescription = resolveUpdatedDescription(ticket, request);
+        TicketPriority updatedPriority = resolveUpdatedPriority(ticket, request);
 
         OffsetDateTime now = OffsetDateTime.now();
 
-        String newTitle = ticket.getTitle();
-        if (request.getTitle() != null) {
-            requireNonBlank(request.getTitle(), "title must not be blank");
-            newTitle = request.getTitle().trim();
-        }
-
-        String newDescription = ticket.getDescription();
-        if (request.getDescription() != null) {
-            requireNonBlank(request.getDescription(), "description must not be blank");
-            newDescription = request.getDescription().trim();
-        }
-
-        TicketPriority newPriority = ticket.getPriority();
-        if (request.getPriority() != null) {
-            newPriority = request.getPriority();
-        }
-
         Long oldAssigneeId = ticket.getAssigneeId();
         Long newAssigneeId = oldAssigneeId;
+
         if (request.getAssigneeId() != null) {
+            ensureCanAssign(currentUser);
             newAssigneeId = request.getAssigneeId();
-            ticket.setAssigneeId(newAssigneeId);
+            ticket.assignTo(newAssigneeId);
         }
 
         ticket.updateDetails(
-                newTitle,
-                newDescription,
-                newPriority,
-                ticket.getAssigneeId(),
+                updatedTitle,
+                updatedDescription,
+                updatedPriority,
                 now
         );
 
         Ticket saved = ticketRepository.save(ticket);
 
-        if (oldAssigneeId == null ? newAssigneeId != null : !oldAssigneeId.equals(newAssigneeId)) {
+        if (!sameValue(oldAssigneeId, newAssigneeId)) {
             auditLogRepository.save(
-                    TicketAuditLog.assigneeChange(saved.getId(), oldAssigneeId, newAssigneeId, me.userId())
+                    TicketAuditLog.assigneeChange(
+                            saved.getId(),
+                            oldAssigneeId,
+                            newAssigneeId,
+                            currentUser.userId()
+                    )
             );
         }
 
         return TicketResponse.from(saved);
     }
 
-    public TicketResponse transitionTicket(AuthPrincipal me, Long id, TicketStatus targetStatus) {
-        requireAuth(me);
+    public TicketResponse transitionTicket(AuthPrincipal currentUser, Long ticketId, TicketStatus targetStatus) {
+        requireAuthenticated(currentUser);
         requireNonNull(targetStatus, "toStatus is required");
 
-        Ticket ticket = ticketRepository.findById(id)
-                .orElseThrow(() -> new TicketNotFoundException(id));
+        Ticket ticket = findTicketOrThrow(ticketId);
+        TicketStatus sourceStatus = ticket.getStatus();
 
-        TicketStatus from = ticket.getStatus();
-        if (from == targetStatus) {
+        if (sourceStatus == targetStatus) {
             return TicketResponse.from(ticket);
         }
 
-        if (me.isRequester()) {
-            assertCanView(me, ticket);
+        assertCanTransition(currentUser, ticket, sourceStatus, targetStatus);
 
-            boolean allowed = (from == TicketStatus.RESOLVED) &&
-                    (targetStatus == TicketStatus.CLOSED || targetStatus == TicketStatus.IN_PROGRESS);
-
-            if (!allowed) {
-                throw new AccessDeniedException("Requester cannot perform this transition");
-            }
-        } else {
-            assertCanMutate(me, ticket);
-        }
-
-        if (!isTransitionAllowed(from, targetStatus)) {
+        if (!sourceStatus.canTransitionTo(targetStatus)) {
             throw new TicketTransitionInvalidException(
-                    id,
-                    from.name() + " -> " + targetStatus.name()
+                    ticketId,
+                    sourceStatus.name() + " -> " + targetStatus.name()
             );
         }
 
         OffsetDateTime now = OffsetDateTime.now();
-        ticket.setStatus(targetStatus);
-        ticket.setUpdatedAt(now);
 
-        if (targetStatus == TicketStatus.RESOLVED) {
-            ticket.setResolvedAt(now);
-        } else if (from == TicketStatus.RESOLVED && targetStatus == TicketStatus.IN_PROGRESS) {
-            ticket.setResolvedAt(null);
+        if (sourceStatus == TicketStatus.RESOLVED && targetStatus == TicketStatus.IN_PROGRESS) {
+            ticket.reopenFromResolved(now);
+        } else if (targetStatus == TicketStatus.RESOLVED) {
+            ticket.markResolved(now);
+        } else {
+            ticket.changeStatus(targetStatus, now);
         }
 
         Ticket saved = ticketRepository.save(ticket);
 
         auditLogRepository.save(
-                TicketAuditLog.statusChange(saved.getId(), from, targetStatus, me.userId())
+                TicketAuditLog.statusChange(
+                        saved.getId(),
+                        sourceStatus,
+                        targetStatus,
+                        currentUser.userId()
+                )
         );
 
         return TicketResponse.from(saved);
     }
 
-    private static void requireAuth(AuthPrincipal me) {
-        if (me == null || me.userId() == null) {
-            throw new AccessDeniedException("Unauthenticated");
+    private Ticket findTicketOrThrow(Long ticketId) {
+        return ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new TicketNotFoundException(ticketId));
+    }
+
+    private void validateCreateRequest(TicketRequest request) {
+        requireNonBlank(request.getTitle(), "title is required");
+        requireNonBlank(request.getDescription(), "description is required");
+        requireNonNull(request.getPriority(), "priority is required");
+        requireNonNull(request.getTeamId(), "teamId is required");
+    }
+
+    private void validateUpdateRequest(AuthPrincipal currentUser, Ticket ticket, TicketRequest request) {
+        if (request.getTeamId() != null && !request.getTeamId().equals(ticket.getTeamId())) {
+            throw new IllegalArgumentException("teamId cannot be changed");
+        }
+
+        if (currentUser.isRequester() && request.getAssigneeId() != null) {
+            throw new AccessDeniedException("Requester cannot assign tickets");
         }
     }
 
-    private static void assertCanView(AuthPrincipal me, Ticket t) {
-        if (me.isAdmin()) return;
+    private void assertCanTransition(
+            AuthPrincipal currentUser,
+            Ticket ticket,
+            TicketStatus sourceStatus,
+            TicketStatus targetStatus
+    ) {
+        if (currentUser.isRequester()) {
+            assertCanView(currentUser, ticket);
 
-        if (me.isAgent()) {
-            if (me.teamId() == null || t.getTeamId() == null || !me.teamId().equals(t.getTeamId())) {
-                throw new AccessDeniedException("Not in same team");
+            boolean requesterAllowed =
+                    sourceStatus == TicketStatus.RESOLVED
+                            && (targetStatus == TicketStatus.CLOSED
+                            || targetStatus == TicketStatus.IN_PROGRESS);
+
+            if (!requesterAllowed) {
+                throw new AccessDeniedException("Requester cannot perform this transition");
+            }
+
+            return;
+        }
+
+        assertCanMutate(currentUser, ticket);
+    }
+
+    private static void assertCanView(AuthPrincipal currentUser, Ticket ticket) {
+        if (currentUser.isAdmin()) {
+            return;
+        }
+
+        if (currentUser.isAgent()) {
+            if (currentUser.teamId() == null
+                    || ticket.getTeamId() == null
+                    || !currentUser.teamId().equals(ticket.getTeamId())) {
+                throw new AccessDeniedException("Agent cannot access tickets outside the team");
             }
             return;
         }
 
-        if (t.getRequesterId() == null || !me.userId().equals(t.getRequesterId())) {
-            throw new AccessDeniedException("Not owner");
+        if (ticket.getRequesterId() == null || !currentUser.userId().equals(ticket.getRequesterId())) {
+            throw new AccessDeniedException("Requester can only access own tickets");
         }
     }
 
-    private static void assertCanMutate(AuthPrincipal me, Ticket t) {
-        assertCanView(me, t);
+    private static void assertCanMutate(AuthPrincipal currentUser, Ticket ticket) {
+        assertCanView(currentUser, ticket);
 
-        if (me.isAdmin()) return;
-        if (me.isAgent()) return;
+        if (currentUser.isAdmin() || currentUser.isAgent()) {
+            return;
+        }
 
-        throw new AccessDeniedException("Requester cannot mutate ticket");
+        throw new AccessDeniedException("Requester cannot update ticket details");
     }
 
-    private boolean isTransitionAllowed(TicketStatus from, TicketStatus to) {
-        return switch (from) {
-            case OPEN -> to == TicketStatus.IN_PROGRESS;
-            case IN_PROGRESS -> to == TicketStatus.WAITING_CUSTOMER || to == TicketStatus.RESOLVED;
-            case WAITING_CUSTOMER -> to == TicketStatus.IN_PROGRESS || to == TicketStatus.RESOLVED;
-            case RESOLVED -> to == TicketStatus.CLOSED || to == TicketStatus.IN_PROGRESS;
-            case CLOSED -> false;
-        };
+    private static void ensureCanAssign(AuthPrincipal currentUser) {
+        if (!currentUser.isAdmin() && !currentUser.isAgent()) {
+            throw new AccessDeniedException("Requester cannot assign tickets");
+        }
+    }
+
+    private static Long requireAgentTeam(AuthPrincipal currentUser) {
+        if (currentUser.teamId() == null) {
+            throw new AccessDeniedException("Agent has no team");
+        }
+        return currentUser.teamId();
+    }
+
+    private static String resolveUpdatedTitle(Ticket ticket, TicketRequest request) {
+        if (request.getTitle() == null) {
+            return ticket.getTitle();
+        }
+
+        requireNonBlank(request.getTitle(), "title must not be blank");
+        return request.getTitle().trim();
+    }
+
+    private static String resolveUpdatedDescription(Ticket ticket, TicketRequest request) {
+        if (request.getDescription() == null) {
+            return ticket.getDescription();
+        }
+
+        requireNonBlank(request.getDescription(), "description must not be blank");
+        return request.getDescription().trim();
+    }
+
+    private static TicketPriority resolveUpdatedPriority(Ticket ticket, TicketRequest request) {
+        return request.getPriority() != null ? request.getPriority() : ticket.getPriority();
+    }
+
+    private static boolean sameValue(Long left, Long right) {
+        return left == null ? right == null : left.equals(right);
+    }
+
+    private static void requireAuthenticated(AuthPrincipal currentUser) {
+        if (currentUser == null || currentUser.userId() == null) {
+            throw new AccessDeniedException("Unauthenticated");
+        }
     }
 
     private static void requireNonBlank(String value, String message) {

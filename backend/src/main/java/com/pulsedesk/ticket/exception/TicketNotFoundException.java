@@ -8,7 +8,7 @@ public class TicketNotFoundException extends RuntimeException {
     private final Long ticketId;
 
     public TicketNotFoundException(Long ticketId) {
-        super("Ticket not found: " + ticketId);
+        super("Ticket not found");
         this.ticketId = ticketId;
     }
 }

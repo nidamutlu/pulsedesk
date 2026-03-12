@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiRequestError } from "../../api/http";
@@ -35,6 +36,23 @@ function formatDateTime(iso?: string | null) {
 
 function labelStatus(s: TicketStatus) {
   return s.replaceAll("_", " ");
+}
+
+function formatPriority(value: string) {
+  return value.charAt(0) + value.slice(1).toLowerCase();
+}
+
+function getTeamLabel(teamId?: number | null) {
+  switch (teamId) {
+    case 1:
+      return "NETWORK / ACCESS";
+    case 2:
+      return "INFRA / DEVOPS";
+    case 3:
+      return "APPLICATION / BACKEND";
+    default:
+      return "UNASSIGNED TEAM";
+  }
 }
 
 function actorLabel(actorId: number) {
@@ -78,14 +96,38 @@ function Badge({
           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
           : "border-slate-200 bg-white text-slate-700";
 
-  return <span className={cx(base, cls)}>{value}</span>;
+  return <span className={cx(base, cls)}>{formatPriority(value)}</span>;
+}
+
+function TeamBadge({ teamId }: { teamId?: number | null }) {
+  const label = getTeamLabel(teamId);
+
+  const cls =
+    teamId === 1
+      ? "border-cyan-200 bg-cyan-50 text-cyan-700"
+      : teamId === 2
+        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+        : teamId === 3
+          ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+          : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold",
+        cls
+      )}
+    >
+      {label}
+    </span>
+  );
 }
 
 function Skeleton({ className }: { className: string }) {
   return <div className={cx("animate-pulse rounded bg-slate-100", className)} />;
 }
 
-function DetailItem({ label, value }: { label: string; value: React.ReactNode }) {
+function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -149,8 +191,8 @@ function auditLineText(l: TicketAuditLog) {
   }
 
   if (l.action === "ASSIGNEE_CHANGE") {
-    const from = l.oldAssigneeId === null ? "Unassigned" : String(l.oldAssigneeId);
-    const to = l.newAssigneeId === null ? "Unassigned" : String(l.newAssigneeId);
+    const from = l.oldAssigneeId === null ? "Unassigned" : `#${l.oldAssigneeId}`;
+    const to = l.newAssigneeId === null ? "Unassigned" : `#${l.newAssigneeId}`;
     return `Assignee: ${from} → ${to}`;
   }
 
@@ -167,6 +209,7 @@ export default function TicketDetailPage() {
   }, [id]);
 
   const mountedRef = useRef(true);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -244,10 +287,8 @@ export default function TicketDetailPage() {
     setTicket(null);
     setNotFound(false);
     setError(null);
-
     setAuditLogs(null);
     setAuditError(null);
-
     setComments(null);
     setCommentsError(null);
 
@@ -320,7 +361,6 @@ export default function TicketDetailPage() {
       setTicket(fresh);
       setTransitionOpen(false);
       setNextStatus("");
-
       void loadAudit(fresh.id);
     } catch (e: unknown) {
       if (!mountedRef.current) return;
@@ -537,11 +577,13 @@ export default function TicketDetailPage() {
                   <>
                     <Skeleton className="h-6 w-20 rounded-full" />
                     <Skeleton className="h-6 w-24 rounded-full" />
+                    <Skeleton className="h-6 w-32 rounded-full" />
                   </>
                 ) : (
                   <>
                     <Badge kind="status" value={String(t.status)} />
                     <Badge kind="priority" value={String(t.priority)} />
+                    <TeamBadge teamId={t.teamId} />
                   </>
                 )}
               </div>
@@ -725,17 +767,19 @@ export default function TicketDetailPage() {
                     loading || !t ? (
                       <Skeleton className="h-5 w-24" />
                     ) : (
-                      String(t.status).replaceAll("_", " ")
+                      labelStatus(t.status)
                     )
                   }
                 />
                 <DetailItem
                   label="Priority"
-                  value={loading || !t ? <Skeleton className="h-5 w-20" /> : String(t.priority)}
+                  value={
+                    loading || !t ? <Skeleton className="h-5 w-20" /> : formatPriority(String(t.priority))
+                  }
                 />
                 <DetailItem
                   label="Requester ID"
-                  value={loading || !t ? <Skeleton className="h-5 w-16" /> : t.requesterId}
+                  value={loading || !t ? <Skeleton className="h-5 w-16" /> : `#${t.requesterId}`}
                 />
                 <DetailItem
                   label="Assignee ID"
@@ -745,24 +789,45 @@ export default function TicketDetailPage() {
                     ) : t.assigneeId === null ? (
                       "Unassigned"
                     ) : (
-                      t.assigneeId
+                      `#${t.assigneeId}`
                     )
                   }
                 />
                 <DetailItem
-                  label="Team ID"
-                  value={loading || !t ? <Skeleton className="h-5 w-12" /> : t.teamId}
+                  label="Team"
+                  value={
+                    loading || !t ? (
+                      <Skeleton className="h-5 w-24" />
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>#{t.teamId}</span>
+                        <TeamBadge teamId={t.teamId} />
+                      </div>
+                    )
+                  }
                 />
 
                 <div className="my-1 h-px bg-slate-100" />
 
                 <DetailItem
                   label="Created At"
-                  value={loading || !t ? <Skeleton className="h-5 w-44" /> : formatDateTime(t.createdAt)}
+                  value={
+                    loading || !t ? (
+                      <Skeleton className="h-5 w-44" />
+                    ) : (
+                      formatDateTime(t.createdAt)
+                    )
+                  }
                 />
                 <DetailItem
                   label="Updated At"
-                  value={loading || !t ? <Skeleton className="h-5 w-44" /> : formatDateTime(t.updatedAt)}
+                  value={
+                    loading || !t ? (
+                      <Skeleton className="h-5 w-44" />
+                    ) : (
+                      formatDateTime(t.updatedAt)
+                    )
+                  }
                 />
                 <DetailItem
                   label="Resolved At"

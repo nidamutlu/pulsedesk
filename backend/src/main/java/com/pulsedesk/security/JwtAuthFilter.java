@@ -11,6 +11,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -26,6 +28,8 @@ import java.util.List;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
 
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
@@ -80,7 +84,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 SecurityContextHolder.clearContext();
                 writeUnauthorized(
                         response,
-                        ApiError.of("AUTH_TOKEN_INVALID", "Invalid token claims")
+                        ApiError.of("AUTH_TOKEN_INVALID", "Invalid access token")
                 );
                 return;
             }
@@ -116,13 +120,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             SecurityContextHolder.clearContext();
             writeUnauthorized(
                     response,
-                    ApiError.of("AUTH_TOKEN_INVALID", "Invalid token")
+                    ApiError.of("AUTH_TOKEN_INVALID", "Invalid access token")
             );
         } catch (Exception ex) {
             SecurityContextHolder.clearContext();
+            log.error("Unexpected JWT filter error", ex);
             writeUnauthorized(
                     response,
-                    ApiError.of("AUTH_TOKEN_INVALID", "Invalid token")
+                    ApiError.of("AUTH_TOKEN_INVALID", "Invalid access token")
             );
         }
     }
@@ -132,7 +137,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        response.resetBuffer();
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -140,6 +144,5 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         objectMapper.writeValue(response.getWriter(), error);
         response.getWriter().flush();
-        response.flushBuffer();
     }
 }

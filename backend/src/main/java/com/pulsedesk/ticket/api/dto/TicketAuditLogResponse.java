@@ -1,14 +1,15 @@
 package com.pulsedesk.ticket.api.dto;
 
 import com.pulsedesk.ticket.domain.TicketAuditLog;
+import com.pulsedesk.ticket.domain.TicketStatus;
 
 import java.time.OffsetDateTime;
 
 public record TicketAuditLogResponse(
         Long id,
         String action,
-        String oldStatus,
-        String newStatus,
+        TicketStatus oldStatus,
+        TicketStatus newStatus,
         Long oldAssigneeId,
         Long newAssigneeId,
         Long actorId,

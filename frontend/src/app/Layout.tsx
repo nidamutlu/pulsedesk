@@ -1,23 +1,38 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchUnreadCount } from "../api/notifications";
 
 function navClassName(isActive: boolean) {
   return [
-    "inline-flex items-center gap-2 border-b-2 pb-1 text-sm font-medium transition",
+    "inline-flex items-center gap-2 border-b-2 pb-1 text-sm font-medium transition-colors",
     isActive
       ? "border-slate-900 text-slate-900"
-      : "border-transparent text-slate-700 hover:text-slate-900",
+      : "border-transparent text-slate-600 hover:text-slate-900",
   ].join(" ");
+}
+
+function formatUnreadCount(count: number) {
+  if (count <= 0) return "";
+  if (count > 99) return "99+";
+  return String(count);
 }
 
 export default function Layout() {
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const count = await fetchUnreadCount();
+      setUnreadCount(count);
+    } catch {
+      setUnreadCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     let alive = true;
 
-    async function load() {
+    async function safeLoad() {
       try {
         const count = await fetchUnreadCount();
         if (alive) {
@@ -31,34 +46,41 @@ export default function Layout() {
     }
 
     function handleNotificationsUpdated() {
-      void load();
+      void safeLoad();
     }
 
-    void load();
+    void safeLoad();
 
-    const id = window.setInterval(() => {
-      void load();
+    const intervalId = window.setInterval(() => {
+      void safeLoad();
     }, 15000);
 
     window.addEventListener("notifications-updated", handleNotificationsUpdated);
 
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearInterval(intervalId);
       window.removeEventListener(
         "notifications-updated",
         handleNotificationsUpdated
       );
     };
-  }, []);
+  }, [loadUnreadCount]);
+
+  const unreadBadge = formatUnreadCount(unreadCount);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
-          <div className="font-bold text-slate-900">PulseDesk</div>
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-10 px-4">
+          <div className="shrink-0 text-lg font-bold tracking-tight text-slate-900">
+            PulseDesk
+          </div>
 
-          <nav className="flex items-center gap-4">
+          <nav
+            className="flex items-center gap-4 sm:gap-5"
+            aria-label="Primary navigation"
+          >
             <NavLink
               to="/dashboard"
               className={({ isActive }) => navClassName(isActive)}
@@ -75,14 +97,12 @@ export default function Layout() {
 
             <NavLink
               to="/notifications"
-              className={({ isActive }) =>
-                `${navClassName(isActive)} relative`
-              }
+              className={({ isActive }) => `${navClassName(isActive)} relative`}
             >
-              Notifications
+              <span>Notifications</span>
               {unreadCount > 0 && (
-                <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
-                  {unreadCount}
+                <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold leading-none text-white">
+                  {unreadBadge}
                 </span>
               )}
             </NavLink>

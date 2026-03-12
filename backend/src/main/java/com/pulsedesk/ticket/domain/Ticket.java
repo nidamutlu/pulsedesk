@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.OffsetDateTime;
 
@@ -36,47 +35,87 @@ public class Ticket {
     private Long requesterId;
 
     @Column(name = "assignee_id")
-    @Setter
     private Long assigneeId;
 
     @Column(name = "team_id", nullable = false)
     private Long teamId;
 
     @Column(name = "created_at", nullable = false)
-    @Setter
     private OffsetDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    @Setter
     private OffsetDateTime updatedAt;
 
     @Column(name = "resolved_at")
-    @Setter
     private OffsetDateTime resolvedAt;
 
-    public Ticket(String title, String description, TicketPriority priority, Long requesterId, Long teamId) {
-        this.title = title;
-        this.description = description;
-        this.priority = priority;
-        this.requesterId = requesterId;
-        this.teamId = teamId;
+    public Ticket(
+            String title,
+            String description,
+            TicketPriority priority,
+            Long requesterId,
+            Long teamId
+    ) {
+        this.title = requireNonBlank(title, "title must not be blank");
+        this.description = requireNonBlank(description, "description must not be blank");
+        this.priority = requireNonNull(priority, "priority must not be null");
+        this.requesterId = requireNonNull(requesterId, "requesterId must not be null");
+        this.teamId = requireNonNull(teamId, "teamId must not be null");
+        this.status = TicketStatus.OPEN;
     }
 
-    public void setStatus(TicketStatus status) {
-        this.status = status;
+    public void assignTo(Long assigneeId) {
+        this.assigneeId = assigneeId;
+    }
+
+    public void initializeTimestamps(OffsetDateTime now) {
+        OffsetDateTime value = requireNonNull(now, "now must not be null");
+        this.createdAt = value;
+        this.updatedAt = value;
+    }
+
+    public void changeStatus(TicketStatus status, OffsetDateTime updatedAt) {
+        this.status = requireNonNull(status, "status must not be null");
+        this.updatedAt = requireNonNull(updatedAt, "updatedAt must not be null");
+    }
+
+    public void markResolved(OffsetDateTime resolvedAt) {
+        OffsetDateTime value = requireNonNull(resolvedAt, "resolvedAt must not be null");
+        this.status = TicketStatus.RESOLVED;
+        this.resolvedAt = value;
+        this.updatedAt = value;
+    }
+
+    public void reopenFromResolved(OffsetDateTime updatedAt) {
+        OffsetDateTime value = requireNonNull(updatedAt, "updatedAt must not be null");
+        this.status = TicketStatus.IN_PROGRESS;
+        this.resolvedAt = null;
+        this.updatedAt = value;
     }
 
     public void updateDetails(
             String title,
             String description,
             TicketPriority priority,
-            Long assigneeId,
             OffsetDateTime updatedAt
     ) {
-        this.title = title;
-        this.description = description;
-        this.priority = priority;
-        this.assigneeId = assigneeId;
-        this.updatedAt = updatedAt;
+        this.title = requireNonBlank(title, "title must not be blank");
+        this.description = requireNonBlank(description, "description must not be blank");
+        this.priority = requireNonNull(priority, "priority must not be null");
+        this.updatedAt = requireNonNull(updatedAt, "updatedAt must not be null");
+    }
+
+    private static String requireNonBlank(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value.trim();
+    }
+
+    private static <T> T requireNonNull(T value, String message) {
+        if (value == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
     }
 }

@@ -36,9 +36,9 @@ public class TicketController {
     @ResponseStatus(HttpStatus.CREATED)
     public TicketResponse createTicket(
             @Valid @RequestBody TicketRequest request,
-            @AuthenticationPrincipal AuthPrincipal me
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
-        return ticketService.createTicket(me, request);
+        return ticketService.createTicket(currentUser, request);
     }
 
     @GetMapping
@@ -47,53 +47,58 @@ public class TicketController {
             @RequestParam(required = false) TicketPriority priority,
             @RequestParam(required = false) Long assigneeId,
             @RequestParam(required = false) Long teamId,
-            @RequestParam(required = false, name = "q") String query,
-            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdTo,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdFrom,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdTo,
             @PageableDefault(size = 20) Pageable pageable,
-            @AuthenticationPrincipal AuthPrincipal me
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
         return ticketService.listTickets(
-                me, status, priority, assigneeId, teamId, query, createdFrom, createdTo, pageable
+                currentUser,
+                status,
+                priority,
+                assigneeId,
+                teamId,
+                query,
+                createdFrom,
+                createdTo,
+                pageable
         );
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/{ticketId}")
     public TicketResponse getTicketById(
-            @PathVariable Long id,
-            @AuthenticationPrincipal AuthPrincipal me
+            @PathVariable Long ticketId,
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
-        return ticketService.getTicketById(me, id);
+        return ticketService.getTicketById(currentUser, ticketId);
     }
 
-    @PatchMapping("/{id}")
+    @PatchMapping("/{ticketId}")
     public TicketResponse updateTicket(
-            @PathVariable Long id,
+            @PathVariable Long ticketId,
             @Valid @RequestBody TicketRequest request,
-            @AuthenticationPrincipal AuthPrincipal me
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
-        if (request.getStatus() != null) {
-            throw new IllegalArgumentException(
-                    "Status cannot be updated via PATCH. Use /tickets/{id}/transition."
-            );
-        }
-        return ticketService.updateTicket(me, id, request);
+        return ticketService.updateTicket(currentUser, ticketId, request);
     }
 
-    @PostMapping("/{id}/transition")
+    @PostMapping("/{ticketId}/transition")
     public TicketResponse transitionTicket(
-            @PathVariable Long id,
+            @PathVariable Long ticketId,
             @Valid @RequestBody TicketTransitionRequest request,
-            @AuthenticationPrincipal AuthPrincipal me
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
-        return ticketService.transitionTicket(me, id, request.toStatus());
+        return ticketService.transitionTicket(currentUser, ticketId, request.toStatus());
     }
 
-    @GetMapping("/{id}/audit-logs")
+    @GetMapping("/{ticketId}/audit-logs")
     public List<TicketAuditLogResponse> listAuditLogs(
-            @PathVariable Long id,
-            @AuthenticationPrincipal AuthPrincipal me
+            @PathVariable Long ticketId,
+            @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
-        return ticketAuditService.listAuditLogs(me, id);
+        return ticketAuditService.listAuditLogs(currentUser, ticketId);
     }
 }
