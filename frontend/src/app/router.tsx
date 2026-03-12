@@ -13,33 +13,48 @@ import TicketDetailPage from "../pages/TicketDetail/TicketDetailPage";
 import NotificationsPage from "../pages/Notifications/NotificationsPage";
 
 function useAccessTokenSnapshot() {
-  const [tick, setTick] = useState(0);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (
-        e.key === "pulsedesk.accessToken" ||
-        e.key === "pulsedesk.refreshToken"
-      ) {
-        setTick((t) => t + 1);
-      }
-    };
+    function refreshSnapshot() {
+      setVersion((current) => current + 1);
+    }
 
-    window.addEventListener("storage", onStorage);
+    function handleStorage(event: StorageEvent) {
+      if (
+        event.key === "pulsedesk.accessToken" ||
+        event.key === "pulsedesk.refreshToken"
+      ) {
+        refreshSnapshot();
+      }
+    }
+
+    function handleAuthChanged() {
+      refreshSnapshot();
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("auth-changed", handleAuthChanged);
 
     return () => {
-      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("auth-changed", handleAuthChanged);
     };
   }, []);
 
   return useMemo(() => {
-    void tick;
+    void version;
     return getAccessToken();
-  }, [tick]);
+  }, [version]);
+}
+
+function RootRedirect() {
+  const token = useAccessTokenSnapshot();
+  return <Navigate to={token ? "/dashboard" : "/login"} replace />;
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const loc = useLocation();
+  const location = useLocation();
   const token = useAccessTokenSnapshot();
 
   if (!token) {
@@ -47,7 +62,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
       <Navigate
         to="/login"
         replace
-        state={{ from: `${loc.pathname}${loc.search}` }}
+        state={{ from: `${location.pathname}${location.search}` }}
       />
     );
   }
@@ -55,7 +70,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
+function RedirectIfAuthenticated({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const token = useAccessTokenSnapshot();
 
   if (token) {
@@ -85,14 +104,14 @@ function NotFoundPage() {
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <Navigate to="/login" replace />,
+    element: <RootRedirect />,
   },
   {
     path: "/login",
     element: (
-      <RedirectIfAuthed>
+      <RedirectIfAuthenticated>
         <LoginPage />
-      </RedirectIfAuthed>
+      </RedirectIfAuthenticated>
     ),
   },
   {

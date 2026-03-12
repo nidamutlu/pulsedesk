@@ -162,6 +162,16 @@ export async function createTicket(
   });
 }
 
+export async function deleteTicket(
+  id: number,
+  init?: RequestInit
+): Promise<void> {
+  await http<void>(`/tickets/${id}`, {
+    method: "DELETE",
+    ...withSignal(init),
+  });
+}
+
 export async function transitionTicket(
   id: number,
   toStatus: TicketStatus,

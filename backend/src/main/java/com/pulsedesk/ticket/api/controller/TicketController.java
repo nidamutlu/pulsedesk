@@ -101,4 +101,13 @@ public class TicketController {
     ) {
         return ticketAuditService.listAuditLogs(currentUser, ticketId);
     }
+
+    @DeleteMapping("/{ticketId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteTicket(
+            @PathVariable Long ticketId,
+            @AuthenticationPrincipal AuthPrincipal currentUser
+    ) {
+        ticketService.deleteTicket(currentUser, ticketId);
+    }
 }

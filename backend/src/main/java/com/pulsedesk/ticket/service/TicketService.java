@@ -1,5 +1,6 @@
 package com.pulsedesk.ticket.service;
 
+import com.pulsedesk.notification.repository.NotificationRepository;
 import com.pulsedesk.security.AuthPrincipal;
 import com.pulsedesk.ticket.api.dto.TicketRequest;
 import com.pulsedesk.ticket.api.dto.TicketResponse;
@@ -9,6 +10,7 @@ import com.pulsedesk.ticket.domain.TicketPriority;
 import com.pulsedesk.ticket.domain.TicketStatus;
 import com.pulsedesk.ticket.exception.TicketNotFoundException;
 import com.pulsedesk.ticket.exception.TicketTransitionInvalidException;
+import com.pulsedesk.ticket.repository.CommentRepository;
 import com.pulsedesk.ticket.repository.TicketAuditLogRepository;
 import com.pulsedesk.ticket.repository.TicketRepository;
 import com.pulsedesk.ticket.repository.TicketSpecifications;
@@ -29,6 +31,8 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final TicketAuditLogRepository auditLogRepository;
+    private final CommentRepository commentRepository;
+    private final NotificationRepository notificationRepository;
 
     public TicketResponse createTicket(AuthPrincipal currentUser, TicketRequest request) {
         requireAuthenticated(currentUser);
@@ -199,6 +203,20 @@ public class TicketService {
         );
 
         return TicketResponse.from(saved);
+    }
+
+    public void deleteTicket(AuthPrincipal currentUser, Long ticketId) {
+        requireAuthenticated(currentUser);
+
+        if (!currentUser.isAdmin()) {
+            throw new AccessDeniedException("Only admin can delete tickets");
+        }
+
+        Ticket ticket = findTicketOrThrow(ticketId);
+
+        notificationRepository.deleteByTicket_Id(ticketId);
+        commentRepository.deleteByTicket_Id(ticketId);
+        ticketRepository.delete(ticket);
     }
 
     private Ticket findTicketOrThrow(Long ticketId) {

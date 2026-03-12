@@ -49,23 +49,25 @@ function notifyAuthChanged() {
   window.dispatchEvent(new Event("auth-changed"));
 }
 
-function base64UrlDecode(value: string) {
+function base64UrlDecode(value: string): string {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(
     normalized.length + ((4 - (normalized.length % 4)) % 4),
     "="
   );
+
   return atob(padded);
 }
 
 function parseJwtPayload(token: string): JwtPayload | null {
   try {
     const parts = token.split(".");
-    if (parts.length < 2) return null;
+    if (parts.length < 2) {
+      return null;
+    }
 
     const decoded = base64UrlDecode(parts[1]);
-    const payload = JSON.parse(decoded) as JwtPayload;
-    return payload;
+    return JSON.parse(decoded) as JwtPayload;
   } catch {
     return null;
   }
@@ -79,6 +81,7 @@ function toRole(value: unknown): UserRole | null {
   if (value === "ADMIN" || value === "AGENT" || value === "REQUESTER") {
     return value;
   }
+
   return null;
 }
 
@@ -107,20 +110,28 @@ export function clearTokens() {
   notifyAuthChanged();
 }
 
-export function isAuthenticated() {
+export function logout() {
+  clearTokens();
+}
+
+export function isAuthenticated(): boolean {
   return Boolean(getAccessToken());
 }
 
 export function getCurrentUser(): AuthUser | null {
   const token = getAccessToken();
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
 
   const payload = parseJwtPayload(token);
-  if (!payload) return null;
+  if (!payload) {
+    return null;
+  }
 
   const username =
     typeof payload.sub === "string" && payload.sub.trim().length > 0
-      ? payload.sub
+      ? payload.sub.trim()
       : null;
 
   const userId =
@@ -156,13 +167,18 @@ export async function login(body: LoginRequest): Promise<LoginResponse> {
   assertNonEmptyString(accessToken, "accessToken");
   assertNonEmptyString(refreshToken, "refreshToken");
 
-  const tokens: LoginResponse = { accessToken, refreshToken };
+  const tokens: LoginResponse = {
+    accessToken,
+    refreshToken,
+  };
+
   setTokens(tokens);
   return tokens;
 }
 
 export async function refreshAccessToken(): Promise<RefreshResponse> {
   const refreshToken = getRefreshToken();
+
   if (!refreshToken) {
     throw new Error("Missing refresh token");
   }
@@ -177,11 +193,8 @@ export async function refreshAccessToken(): Promise<RefreshResponse> {
   assertNonEmptyString(accessToken, "accessToken");
 
   setAccessToken(accessToken);
-  return { accessToken };
-}
 
-export function logout() {
-  clearTokens();
+  return { accessToken };
 }
 
 export function getAuthErrorMessage(err: unknown): string {
@@ -189,6 +202,7 @@ export function getAuthErrorMessage(err: unknown): string {
     if (err.status === 401) {
       return "Invalid username or password.";
     }
+
     return err.message;
   }
 

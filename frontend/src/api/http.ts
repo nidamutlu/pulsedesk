@@ -27,14 +27,17 @@ type HttpOptions = Omit<RequestInit, "headers" | "body"> & {
 
 let refreshInFlight: Promise<string> | null = null;
 
-function isAuthPath(path: string) {
+function isAuthPath(path: string): boolean {
   return path.startsWith("/api/auth/");
 }
 
-async function readSafe(res: Response): Promise<unknown> {
+async function readSafe(response: Response): Promise<unknown> {
   try {
-    const text = await res.text();
-    if (!text) return null;
+    const text = await response.text();
+
+    if (!text) {
+      return null;
+    }
 
     try {
       return JSON.parse(text);
@@ -46,14 +49,20 @@ async function readSafe(res: Response): Promise<unknown> {
   }
 }
 
-function buildBodyAndHeaders(options: HttpOptions) {
+function buildBodyAndHeaders(options: HttpOptions): {
+  headers: Record<string, string>;
+  finalBody?: BodyInit;
+} {
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...(options.headers ?? {}),
   };
 
   const body = options.body;
-  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+
   const isArrayBufferView =
     typeof ArrayBuffer !== "undefined" &&
     body != null &&
@@ -76,6 +85,7 @@ function buildBodyAndHeaders(options: HttpOptions) {
     if (!headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
+
     finalBody = JSON.stringify(body);
   }
 
@@ -86,12 +96,13 @@ async function doFetch(
   path: string,
   options: HttpOptions,
   tokenOverride?: string
-) {
+): Promise<Response> {
   const { headers, finalBody } = buildBodyAndHeaders(options);
 
   const token = tokenOverride ?? getAccessToken();
+
   if (token && options.auth !== false) {
-    headers["Authorization"] = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
   }
 
   return fetch(`${API_BASE}${path}`, {
@@ -113,15 +124,16 @@ async function ensureFreshAccessToken(): Promise<string> {
   return refreshInFlight;
 }
 
-function extractErrorMessage(details: unknown, status: number) {
+function extractErrorMessage(details: unknown, status: number): string {
   if (details && typeof details === "object" && "message" in details) {
     const message = (details as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) {
+
+    if (typeof message === "string" && message.trim().length > 0) {
       return message;
     }
   }
 
-  if (typeof details === "string" && details.trim()) {
+  if (typeof details === "string" && details.trim().length > 0) {
     return details;
   }
 
@@ -166,7 +178,8 @@ export async function http<T>(
     return undefined as T;
   }
 
-  const contentType = response.headers.get("content-type") || "";
+  const contentType = response.headers.get("content-type") ?? "";
+
   if (contentType.includes("application/json")) {
     return (await response.json()) as T;
   }

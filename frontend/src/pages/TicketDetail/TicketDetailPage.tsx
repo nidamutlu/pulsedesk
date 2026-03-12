@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { getCurrentUser } from "../../api/auth";
 import { ApiRequestError } from "../../api/http";
 import {
   createTicketComment,
+  deleteTicket,
   fetchTicketAuditLogs,
   fetchTicketById,
   fetchTicketComments,
@@ -162,7 +164,9 @@ function sortAuditNewestFirst(logs: TicketAuditLog[]) {
 function isInvalidTransitionError(e: ApiRequestError) {
   if (e.status === 409) return true;
   const d = e.details as any;
-  if (d && typeof d === "object" && d.code === "TICKET_TRANSITION_INVALID") return true;
+  if (d && typeof d === "object" && d.code === "TICKET_TRANSITION_INVALID") {
+    return true;
+  }
   return false;
 }
 
@@ -199,9 +203,30 @@ function auditLineText(l: TicketAuditLog) {
   return l.action;
 }
 
+function DangerIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M10.5 11.25v3.75m3-3.75v3.75M4.5 7.5h15m-1.5 0-.82 10.672A2.25 2.25 0 0 1 14.936 20.25H9.064a2.25 2.25 0 0 1-2.244-2.078L6 7.5m3.75 0V5.625A1.125 1.125 0 0 1 10.875 4.5h2.25A1.125 1.125 0 0 1 14.25 5.625V7.5"
+      />
+    </svg>
+  );
+}
+
 export default function TicketDetailPage() {
   const nav = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const currentUser = getCurrentUser();
+  const canDeleteTicket = currentUser?.role === "ADMIN";
 
   const ticketId = useMemo(() => {
     const n = Number(id);
@@ -239,6 +264,10 @@ export default function TicketDetailPage() {
   const [transitionSaving, setTransitionSaving] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
 
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const statusOptions: TicketStatus[] = useMemo(() => {
     if (!ticket) return [];
     return allowedNextStatuses(ticket.status);
@@ -248,6 +277,22 @@ export default function TicketDetailPage() {
     if (!ticket) return;
     setNextStatus(statusOptions[0] ?? "");
   }, [ticket?.id, ticket?.status, statusOptions]);
+
+  useEffect(() => {
+    if (!confirmDeleteOpen) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !deleteSaving) {
+        setConfirmDeleteOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [confirmDeleteOpen, deleteSaving]);
 
   const loadAudit = useCallback(async (idNum: number) => {
     setAuditError(null);
@@ -291,6 +336,7 @@ export default function TicketDetailPage() {
     setAuditError(null);
     setComments(null);
     setCommentsError(null);
+    setDeleteError(null);
 
     if (ticketId === null) {
       setLoading(false);
@@ -367,7 +413,9 @@ export default function TicketDetailPage() {
 
       if (e instanceof ApiRequestError) {
         if (isInvalidTransitionError(e)) {
-          setTransitionError("This status transition is not allowed for the current ticket.");
+          setTransitionError(
+            "This status transition is not allowed for the current ticket."
+          );
           return;
         }
         setTransitionError(getApiErrorMessage(e));
@@ -401,12 +449,39 @@ export default function TicketDetailPage() {
     } catch (e: unknown) {
       if (!mountedRef.current) return;
 
-      if (e instanceof ApiRequestError) setCommentSaveError(getApiErrorMessage(e));
-      else setCommentSaveError(e instanceof Error ? e.message : String(e));
+      if (e instanceof ApiRequestError) {
+        setCommentSaveError(getApiErrorMessage(e));
+      } else {
+        setCommentSaveError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       if (mountedRef.current) setCommentSaving(false);
     }
   }, [ticket, ticketId, commentBody, loadComments]);
+
+  const handleDelete = useCallback(async () => {
+    if (!ticket || ticketId === null) return;
+
+    setDeleteSaving(true);
+    setDeleteError(null);
+    setConfirmDeleteOpen(false);
+
+    try {
+      await deleteTicket(ticketId);
+      if (!mountedRef.current) return;
+      nav("/tickets", { replace: true });
+    } catch (e: unknown) {
+      if (!mountedRef.current) return;
+
+      if (e instanceof ApiRequestError) {
+        setDeleteError(getApiErrorMessage(e));
+      } else {
+        setDeleteError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (mountedRef.current) setDeleteSaving(false);
+    }
+  }, [ticket, ticketId, nav]);
 
   if (notFound) {
     return (
@@ -421,7 +496,9 @@ export default function TicketDetailPage() {
           </button>
 
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-            <h1 className="text-2xl font-semibold text-slate-900">Ticket not found</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Ticket not found
+            </h1>
             <p className="mt-2 text-sm text-slate-600">
               This ticket does not exist or you may not have access.
             </p>
@@ -444,7 +521,10 @@ export default function TicketDetailPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="mx-auto w-full max-w-5xl px-4 py-10">
-          <Link to="/tickets" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+          <Link
+            to="/tickets"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900"
+          >
             ← Back to Tickets
           </Link>
 
@@ -479,28 +559,55 @@ export default function TicketDetailPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="flex items-center justify-between gap-3">
-          <Link to="/tickets" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+          <Link
+            to="/tickets"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900"
+          >
             ← Back to Tickets
           </Link>
 
           <div className="flex items-center gap-2">
+            {canDeleteTicket && (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(true)}
+                disabled={loading || !t || deleteSaving}
+                className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                title="Delete ticket"
+              >
+                {deleteSaving ? "Deleting..." : "Delete Ticket"}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={openTransition}
-              disabled={loading || !t || statusOptions.length === 0}
+              disabled={loading || !t || statusOptions.length === 0 || deleteSaving}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              title={statusOptions.length === 0 ? "No transitions available" : "Change status"}
+              title={
+                statusOptions.length === 0
+                  ? "No transitions available"
+                  : "Change status"
+              }
             >
               Change Status
             </button>
           </div>
         </div>
 
+        {deleteError && (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-sm">
+            {deleteError}
+          </div>
+        )}
+
         {transitionOpen && (
           <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Status Transition</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Status Transition
+                </div>
                 <div className="mt-1 text-sm text-slate-600">
                   Current:{" "}
                   <span className="font-semibold text-slate-900">
@@ -512,7 +619,9 @@ export default function TicketDetailPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select
                   value={nextStatus}
-                  onChange={(e) => setNextStatus(e.target.value as TicketStatus | "")}
+                  onChange={(e) =>
+                    setNextStatus(e.target.value as TicketStatus | "")
+                  }
                   disabled={transitionSaving}
                   className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-slate-400 disabled:opacity-60"
                 >
@@ -607,7 +716,9 @@ export default function TicketDetailPage() {
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">Description</div>
+              <div className="text-sm font-semibold text-slate-900">
+                Description
+              </div>
 
               <div className="mt-4">
                 {loading || !t ? (
@@ -627,7 +738,9 @@ export default function TicketDetailPage() {
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-900">Comments</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Comments
+                </div>
 
                 <button
                   type="button"
@@ -650,7 +763,9 @@ export default function TicketDetailPage() {
                 />
 
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="text-xs text-slate-500">{commentBody.trim().length}/5000</div>
+                  <div className="text-xs text-slate-500">
+                    {commentBody.trim().length}/5000
+                  </div>
 
                   <button
                     type="button"
@@ -707,7 +822,9 @@ export default function TicketDetailPage() {
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-900">Activity</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Activity
+                </div>
 
                 <button
                   type="button"
@@ -774,12 +891,22 @@ export default function TicketDetailPage() {
                 <DetailItem
                   label="Priority"
                   value={
-                    loading || !t ? <Skeleton className="h-5 w-20" /> : formatPriority(String(t.priority))
+                    loading || !t ? (
+                      <Skeleton className="h-5 w-20" />
+                    ) : (
+                      formatPriority(String(t.priority))
+                    )
                   }
                 />
                 <DetailItem
                   label="Requester ID"
-                  value={loading || !t ? <Skeleton className="h-5 w-16" /> : `#${t.requesterId}`}
+                  value={
+                    loading || !t ? (
+                      <Skeleton className="h-5 w-16" />
+                    ) : (
+                      `#${t.requesterId}`
+                    )
+                  }
                 />
                 <DetailItem
                   label="Assignee ID"
@@ -847,12 +974,69 @@ export default function TicketDetailPage() {
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
               <div className="font-semibold text-slate-900">Tip</div>
               <div className="mt-1">
-                Use <span className="font-semibold text-slate-900">@someone</span> in a comment to mention a user.
+                Use{" "}
+                <span className="font-semibold text-slate-900">@someone</span> in
+                a comment to mention a user.
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {confirmDeleteOpen && t && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => {
+            if (!deleteSaving) {
+              setConfirmDeleteOpen(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                <DangerIcon />
+              </div>
+
+              <h2 className="text-lg font-semibold text-slate-900">
+                Delete Ticket
+              </h2>
+            </div>
+
+            <p className="mt-3 text-sm text-slate-600">
+              Are you sure you want to delete ticket{" "}
+              <span className="font-semibold text-slate-900">#{t.id}</span>?
+            </p>
+
+            <p className="mt-2 text-sm text-rose-600">
+              This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                disabled={deleteSaving}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteSaving}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleteSaving ? "Deleting..." : "Delete Ticket"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
