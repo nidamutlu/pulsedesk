@@ -2,6 +2,10 @@ package com.pulsedesk.ticket.service;
 
 import com.pulsedesk.notification.repository.NotificationRepository;
 import com.pulsedesk.security.AuthPrincipal;
+import com.pulsedesk.ticket.api.dto.BulkAssignRequest;
+import com.pulsedesk.ticket.api.dto.BulkOperationItemResult;
+import com.pulsedesk.ticket.api.dto.BulkOperationResponse;
+import com.pulsedesk.ticket.api.dto.BulkTransitionRequest;
 import com.pulsedesk.ticket.api.dto.TicketRequest;
 import com.pulsedesk.ticket.api.dto.TicketResponse;
 import com.pulsedesk.ticket.domain.Ticket;
@@ -15,19 +19,30 @@ import com.pulsedesk.ticket.repository.TicketAuditLogRepository;
 import com.pulsedesk.ticket.repository.TicketRepository;
 import com.pulsedesk.ticket.repository.TicketSpecifications;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class TicketService {
+
+    private static final DateTimeFormatter CSV_DATE_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final String CSV_HEADER =
+            "id,title,status,priority,requester,assignee,createdAt,updatedAt\n";
 
     private final TicketRepository ticketRepository;
     private final TicketAuditLogRepository auditLogRepository;
@@ -81,29 +96,60 @@ public class TicketService {
     ) {
         requireAuthenticated(currentUser);
 
-        Specification<Ticket> spec = Specification
-                .where(TicketSpecifications.hasStatus(status))
-                .and(TicketSpecifications.hasPriority(priority))
-                .and(TicketSpecifications.hasAssignee(assigneeId))
-                .and(TicketSpecifications.queryText(query))
-                .and(TicketSpecifications.createdBetween(createdFrom, createdTo));
-
-        if (currentUser.isAdmin()) {
-            spec = spec.and(TicketSpecifications.hasTeam(teamId));
-        } else if (currentUser.isAgent()) {
-            Long currentTeamId = requireAgentTeam(currentUser);
-
-            if (teamId != null && !teamId.equals(currentTeamId)) {
-                throw new AccessDeniedException("Agent cannot query another team");
-            }
-
-            spec = spec.and(TicketSpecifications.hasTeam(currentTeamId));
-        } else {
-            spec = spec.and(TicketSpecifications.hasRequester(currentUser.userId()));
-        }
+        Specification<Ticket> spec = buildTicketListSpec(
+                currentUser,
+                status,
+                priority,
+                assigneeId,
+                teamId,
+                query,
+                createdFrom,
+                createdTo
+        );
 
         return ticketRepository.findAll(spec, pageable)
                 .map(TicketResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportTicketsCsv(
+            AuthPrincipal currentUser,
+            TicketStatus status,
+            TicketPriority priority,
+            Long assigneeId,
+            Long teamId,
+            String query,
+            OffsetDateTime createdFrom,
+            OffsetDateTime createdTo,
+            Pageable pageable
+    ) {
+        requireAuthenticated(currentUser);
+
+        Specification<Ticket> spec = buildTicketListSpec(
+                currentUser,
+                status,
+                priority,
+                assigneeId,
+                teamId,
+                query,
+                createdFrom,
+                createdTo
+        );
+
+        Sort sort = (pageable != null && pageable.getSort().isSorted())
+                ? pageable.getSort()
+                : Sort.by(Sort.Direction.DESC, "createdAt");
+
+        List<Ticket> tickets = ticketRepository.findAll(spec, sort);
+
+        StringBuilder csv = new StringBuilder();
+        csv.append(CSV_HEADER);
+
+        for (Ticket ticket : tickets) {
+            csv.append(toCsvRow(ticket));
+        }
+
+        return csv.toString();
     }
 
     @Transactional(readOnly = true)
@@ -129,13 +175,8 @@ public class TicketService {
 
         OffsetDateTime now = OffsetDateTime.now();
 
-        Long oldAssigneeId = ticket.getAssigneeId();
-        Long newAssigneeId = oldAssigneeId;
-
         if (request.getAssigneeId() != null) {
-            ensureCanAssign(currentUser);
-            newAssigneeId = request.getAssigneeId();
-            ticket.assignTo(newAssigneeId);
+            applyAssignment(currentUser, ticket, request.getAssigneeId(), now);
         }
 
         ticket.updateDetails(
@@ -146,18 +187,6 @@ public class TicketService {
         );
 
         Ticket saved = ticketRepository.save(ticket);
-
-        if (!sameValue(oldAssigneeId, newAssigneeId)) {
-            auditLogRepository.save(
-                    TicketAuditLog.assigneeChange(
-                            saved.getId(),
-                            oldAssigneeId,
-                            newAssigneeId,
-                            currentUser.userId()
-                    )
-            );
-        }
-
         return TicketResponse.from(saved);
     }
 
@@ -205,6 +234,97 @@ public class TicketService {
         return TicketResponse.from(saved);
     }
 
+    public BulkOperationResponse bulkAssign(AuthPrincipal currentUser, BulkAssignRequest request) {
+        requireAuthenticated(currentUser);
+        requireNonNull(request, "request is required");
+        requireNonNull(request.ticketIds(), "ticketIds is required");
+        requireNonNull(request.assigneeId(), "assigneeId is required");
+
+        log.info("Bulk assign requested by user {} for {} tickets",
+                currentUser.userId(),
+                request.ticketIds().size());
+
+        List<BulkOperationItemResult> results = new ArrayList<>();
+        int successCount = 0;
+
+        List<Long> distinctTicketIds = request.ticketIds().stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        for (Long ticketId : distinctTicketIds) {
+            try {
+                requireNonNull(ticketId, "ticketId is required");
+
+                Ticket ticket = findTicketOrThrow(ticketId);
+                applyAssignment(currentUser, ticket, request.assigneeId(), OffsetDateTime.now());
+                ticketRepository.save(ticket);
+
+                results.add(new BulkOperationItemResult(
+                        ticketId,
+                        true,
+                        "Ticket assigned successfully"
+                ));
+                successCount++;
+            } catch (RuntimeException ex) {
+                results.add(new BulkOperationItemResult(
+                        ticketId,
+                        false,
+                        safeMessage(ex)
+                ));
+            }
+        }
+
+        int failureCount = distinctTicketIds.size() - successCount;
+        log.info("Bulk assign completed: {} success, {} failure", successCount, failureCount);
+
+        return buildBulkOperationResponse(distinctTicketIds.size(), successCount, results);
+    }
+
+    public BulkOperationResponse bulkTransition(AuthPrincipal currentUser, BulkTransitionRequest request) {
+        requireAuthenticated(currentUser);
+        requireNonNull(request, "request is required");
+        requireNonNull(request.ticketIds(), "ticketIds is required");
+        requireNonNull(request.status(), "status is required");
+
+        log.info("Bulk transition requested by user {} to status {} for {} tickets",
+                currentUser.userId(),
+                request.status(),
+                request.ticketIds().size());
+
+        List<BulkOperationItemResult> results = new ArrayList<>();
+        int successCount = 0;
+
+        List<Long> distinctTicketIds = request.ticketIds().stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        for (Long ticketId : distinctTicketIds) {
+            try {
+                requireNonNull(ticketId, "ticketId is required");
+
+                transitionTicket(currentUser, ticketId, request.status());
+
+                results.add(new BulkOperationItemResult(
+                        ticketId,
+                        true,
+                        "Ticket transitioned successfully"
+                ));
+                successCount++;
+            } catch (RuntimeException ex) {
+                results.add(new BulkOperationItemResult(
+                        ticketId,
+                        false,
+                        safeMessage(ex)
+                ));
+            }
+        }
+
+        int failureCount = distinctTicketIds.size() - successCount;
+        log.info("Bulk transition completed: {} success, {} failure", successCount, failureCount);
+
+        return buildBulkOperationResponse(distinctTicketIds.size(), successCount, results);
+    }
+
     public void deleteTicket(AuthPrincipal currentUser, Long ticketId) {
         requireAuthenticated(currentUser);
 
@@ -219,9 +339,103 @@ public class TicketService {
         ticketRepository.delete(ticket);
     }
 
+    private Specification<Ticket> buildTicketListSpec(
+            AuthPrincipal currentUser,
+            TicketStatus status,
+            TicketPriority priority,
+            Long assigneeId,
+            Long teamId,
+            String query,
+            OffsetDateTime createdFrom,
+            OffsetDateTime createdTo
+    ) {
+        Specification<Ticket> spec = Specification
+                .where(TicketSpecifications.hasStatus(status))
+                .and(TicketSpecifications.hasPriority(priority))
+                .and(TicketSpecifications.hasAssignee(assigneeId))
+                .and(TicketSpecifications.queryText(query))
+                .and(TicketSpecifications.createdBetween(createdFrom, createdTo));
+
+        if (currentUser.isAdmin()) {
+            spec = spec.and(TicketSpecifications.hasTeam(teamId));
+        } else if (currentUser.isAgent()) {
+            Long currentTeamId = requireAgentTeam(currentUser);
+
+            if (teamId != null && !teamId.equals(currentTeamId)) {
+                throw new AccessDeniedException("Agent cannot query another team");
+            }
+
+            spec = spec.and(TicketSpecifications.hasTeam(currentTeamId));
+        } else {
+            spec = spec.and(TicketSpecifications.hasRequester(currentUser.userId()));
+        }
+
+        return spec;
+    }
+
+    private static String toCsvRow(Ticket ticket) {
+        return new StringBuilder()
+                .append(csvValue(ticket.getId())).append(',')
+                .append(csvValue(ticket.getTitle())).append(',')
+                .append(csvValue(ticket.getStatus())).append(',')
+                .append(csvValue(ticket.getPriority())).append(',')
+                .append(csvValue(ticket.getRequesterId())).append(',')
+                .append(csvValue(ticket.getAssigneeId())).append(',')
+                .append(csvValue(formatDate(ticket.getCreatedAt()))).append(',')
+                .append(csvValue(formatDate(ticket.getUpdatedAt())))
+                .append('\n')
+                .toString();
+    }
+
     private Ticket findTicketOrThrow(Long ticketId) {
         return ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
+    }
+
+    private void applyAssignment(
+            AuthPrincipal currentUser,
+            Ticket ticket,
+            Long assigneeId,
+            OffsetDateTime now
+    ) {
+        assertCanMutate(currentUser, ticket);
+        ensureCanAssign(currentUser);
+
+        Long oldAssigneeId = ticket.getAssigneeId();
+
+        if (sameValue(oldAssigneeId, assigneeId)) {
+            return;
+        }
+
+        ticket.assignTo(assigneeId);
+        ticket.touch(now);
+
+        auditLogRepository.save(
+                TicketAuditLog.assigneeChange(
+                        ticket.getId(),
+                        oldAssigneeId,
+                        assigneeId,
+                        currentUser.userId()
+                )
+        );
+    }
+
+    private BulkOperationResponse buildBulkOperationResponse(
+            int totalCount,
+            int successCount,
+            List<BulkOperationItemResult> results
+    ) {
+        int failureCount = totalCount - successCount;
+        String message = successCount + " tickets processed successfully, "
+                + failureCount + " failed";
+
+        return new BulkOperationResponse(
+                totalCount,
+                successCount,
+                failureCount,
+                message,
+                results
+        );
     }
 
     private void validateCreateRequest(TicketRequest request) {
@@ -250,12 +464,7 @@ public class TicketService {
         if (currentUser.isRequester()) {
             assertCanView(currentUser, ticket);
 
-            boolean requesterAllowed =
-                    sourceStatus == TicketStatus.RESOLVED
-                            && (targetStatus == TicketStatus.CLOSED
-                            || targetStatus == TicketStatus.IN_PROGRESS);
-
-            if (!requesterAllowed) {
+            if (!isRequesterTransitionAllowed(sourceStatus, targetStatus)) {
                 throw new AccessDeniedException("Requester cannot perform this transition");
             }
 
@@ -263,6 +472,15 @@ public class TicketService {
         }
 
         assertCanMutate(currentUser, ticket);
+    }
+
+    private static boolean isRequesterTransitionAllowed(
+            TicketStatus sourceStatus,
+            TicketStatus targetStatus
+    ) {
+        return sourceStatus == TicketStatus.RESOLVED
+                && (targetStatus == TicketStatus.CLOSED
+                || targetStatus == TicketStatus.IN_PROGRESS);
     }
 
     private static void assertCanView(AuthPrincipal currentUser, Ticket ticket) {
@@ -329,8 +547,28 @@ public class TicketService {
         return request.getPriority() != null ? request.getPriority() : ticket.getPriority();
     }
 
+    private static String formatDate(OffsetDateTime value) {
+        return value != null ? CSV_DATE_FORMATTER.format(value) : "";
+    }
+
+    private static String csvValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+
+        String text = String.valueOf(value);
+        String escaped = text.replace("\"", "\"\"");
+        return "\"" + escaped + "\"";
+    }
+
     private static boolean sameValue(Long left, Long right) {
         return left == null ? right == null : left.equals(right);
+    }
+
+    private static String safeMessage(RuntimeException ex) {
+        return ex.getMessage() != null && !ex.getMessage().isBlank()
+                ? ex.getMessage()
+                : ex.getClass().getSimpleName();
     }
 
     private static void requireAuthenticated(AuthPrincipal currentUser) {

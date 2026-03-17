@@ -1,3 +1,4 @@
+import { getAccessToken } from "./auth";
 import { http } from "./http";
 
 export type TicketStatus =
@@ -82,9 +83,35 @@ export type TicketTransitionRequest = {
   toStatus: TicketStatus;
 };
 
+export type BulkAssignRequest = {
+  ticketIds: number[];
+  assigneeId: number;
+};
+
+export type BulkTransitionRequest = {
+  ticketIds: number[];
+  status: TicketStatus;
+};
+
+export type BulkOperationItemResult = {
+  ticketId: number;
+  success: boolean;
+  message: string;
+};
+
+export type BulkActionResponse = {
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  message: string;
+  results: BulkOperationItemResult[];
+};
+
 export type TicketCommentCreateRequest = {
   body: string;
 };
+
+const API_BASE_URL = "http://localhost:8080";
 
 function buildQuery(
   params: Record<string, string | number | boolean | undefined | null>
@@ -132,7 +159,7 @@ export async function fetchTickets(
     priority,
     assigneeId,
     teamId,
-    q,
+    query: q,
     createdFrom,
     createdTo,
   });
@@ -186,6 +213,28 @@ export async function transitionTicket(
   });
 }
 
+export async function bulkAssignTickets(
+  body: BulkAssignRequest,
+  init?: RequestInit
+): Promise<BulkActionResponse> {
+  return http<BulkActionResponse>("/tickets/bulk/assign", {
+    method: "POST",
+    body,
+    ...withSignal(init),
+  });
+}
+
+export async function bulkTransitionTickets(
+  body: BulkTransitionRequest,
+  init?: RequestInit
+): Promise<BulkActionResponse> {
+  return http<BulkActionResponse>("/tickets/bulk/transition", {
+    method: "POST",
+    body,
+    ...withSignal(init),
+  });
+}
+
 export async function fetchTicketAuditLogs(
   id: number,
   init?: RequestInit
@@ -193,6 +242,63 @@ export async function fetchTicketAuditLogs(
   return http<TicketAuditLog[]>(`/tickets/${id}/audit-logs`, {
     ...withSignal(init),
   });
+}
+
+export async function exportTicketsCsv(
+  params: TicketListParams = {}
+): Promise<void> {
+  const {
+    page = 0,
+    size = 10,
+    sortField = "createdAt",
+    sortDir = "desc",
+    status,
+    priority,
+    assigneeId,
+    teamId,
+    q,
+    createdFrom,
+    createdTo,
+  } = params;
+
+  const query = buildQuery({
+    page,
+    size,
+    sort: `${sortField},${sortDir}`,
+    status,
+    priority,
+    assigneeId,
+    teamId,
+    query: q,
+    createdFrom,
+    createdTo,
+  });
+
+  const token = getAccessToken();
+
+  const response = await fetch(`${API_BASE_URL}/tickets/export.csv${query}`, {
+    method: "GET",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(`CSV export failed${message ? `: ${message}` : ""}`);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "tickets.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  window.URL.revokeObjectURL(url);
 }
 
 // ---- Comments ----

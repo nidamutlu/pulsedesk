@@ -8,6 +8,7 @@ import com.pulsedesk.security.JwtService;
 import com.pulsedesk.user.repo.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -41,11 +42,18 @@ public class AuthController {
                     new UsernamePasswordAuthenticationToken(req.username(), req.password())
             );
         } catch (AuthenticationException ex) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid credentials",
+                    ex
+            );
         }
 
         var user = userRepository.findByUsername(req.username())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Invalid credentials"
+                ));
 
         String accessToken = jwtService.generateAccessToken(
                 user.getId(),
@@ -62,24 +70,39 @@ public class AuthController {
     @PostMapping("/refresh")
     public RefreshResponse refresh(@Valid @RequestBody RefreshRequest req) {
         Jws<Claims> jws;
+
         try {
             jws = jwtService.parse(req.refreshToken());
-        } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+        } catch (JwtException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid refresh token",
+                    ex
+            );
         }
 
         Claims claims = jws.getPayload();
+
         if (!jwtService.isRefreshToken(claims)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid refresh token"
+            );
         }
 
         String username = claims.getSubject();
         if (username == null || username.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid refresh token"
+            );
         }
 
         var user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Invalid refresh token"
+                ));
 
         String accessToken = jwtService.generateAccessToken(
                 user.getId(),

@@ -26,3 +26,7 @@ databaseChangeLog:
   - include:
       file: 007-seed-ticket-audit-logs.yaml
       relativeToChangelogFile: true
+
+  - include:
+      file: 008-create-saved-views.yaml
+      relativeToChangelogFile: true

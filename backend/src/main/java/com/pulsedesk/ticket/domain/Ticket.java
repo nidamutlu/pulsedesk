@@ -1,6 +1,13 @@
 package com.pulsedesk.ticket.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -62,10 +69,11 @@ public class Ticket {
         this.requesterId = requireNonNull(requesterId, "requesterId must not be null");
         this.teamId = requireNonNull(teamId, "teamId must not be null");
         this.status = TicketStatus.OPEN;
+        this.resolvedAt = null;
     }
 
     public void assignTo(Long assigneeId) {
-        this.assigneeId = assigneeId;
+        this.assigneeId = requireNonNull(assigneeId, "assigneeId must not be null");
     }
 
     public void initializeTimestamps(OffsetDateTime now) {
@@ -74,9 +82,17 @@ public class Ticket {
         this.updatedAt = value;
     }
 
+    public void touch(OffsetDateTime updatedAt) {
+        this.updatedAt = requireNonNull(updatedAt, "updatedAt must not be null");
+    }
+
     public void changeStatus(TicketStatus status, OffsetDateTime updatedAt) {
         this.status = requireNonNull(status, "status must not be null");
         this.updatedAt = requireNonNull(updatedAt, "updatedAt must not be null");
+
+        if (status != TicketStatus.RESOLVED) {
+            this.resolvedAt = null;
+        }
     }
 
     public void markResolved(OffsetDateTime resolvedAt) {

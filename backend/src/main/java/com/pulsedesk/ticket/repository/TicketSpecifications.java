@@ -58,8 +58,12 @@ public final class TicketSpecifications {
                         : cb.equal(root.get(REQUESTER_ID), requesterId);
     }
 
-    public static Specification<Ticket> createdBetween(OffsetDateTime createdFrom, OffsetDateTime createdTo) {
+    public static Specification<Ticket> createdBetween(
+            OffsetDateTime createdFrom,
+            OffsetDateTime createdTo
+    ) {
         return (root, query, cb) -> {
+
             if (createdFrom == null && createdTo == null) {
                 return cb.conjunction();
             }
@@ -78,26 +82,30 @@ public final class TicketSpecifications {
 
     public static Specification<Ticket> queryText(String queryText) {
         return (root, query, cb) -> {
+
             String normalized = normalize(queryText);
+
             if (normalized == null) {
                 return cb.conjunction();
             }
 
-            String likePattern = "%" + normalized + "%";
+            String pattern = "%" + normalized + "%";
 
             return cb.or(
-                    cb.like(cb.lower(root.get(TITLE)), likePattern),
-                    cb.like(cb.lower(root.get(DESCRIPTION)), likePattern)
+                    cb.like(cb.lower(root.get(TITLE)), pattern),
+                    cb.like(cb.lower(root.get(DESCRIPTION)), pattern)
             );
         };
     }
 
     private static String normalize(String value) {
+
         if (value == null) {
             return null;
         }
 
         String trimmed = value.trim();
+
         if (trimmed.isBlank()) {
             return null;
         }

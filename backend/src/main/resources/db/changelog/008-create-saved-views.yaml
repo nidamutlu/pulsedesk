@@ -1,0 +1,49 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-create-saved-views
+      author: nida
+      changes:
+        - createTable:
+            tableName: saved_views
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_saved_views
+                    nullable: false
+              - column:
+                  name: owner_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: filter_json
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: saved_views
+            baseColumnNames: owner_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_saved_views_owner
+
+        - createIndex:
+            tableName: saved_views
+            indexName: idx_saved_views_owner_id
+            columns:
+              - column:
+                  name: owner_id

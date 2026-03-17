@@ -1,6 +1,9 @@
 package com.pulsedesk.ticket.api.controller;
 
 import com.pulsedesk.security.AuthPrincipal;
+import com.pulsedesk.ticket.api.dto.BulkAssignRequest;
+import com.pulsedesk.ticket.api.dto.BulkOperationResponse;
+import com.pulsedesk.ticket.api.dto.BulkTransitionRequest;
 import com.pulsedesk.ticket.api.dto.TicketAuditLogResponse;
 import com.pulsedesk.ticket.api.dto.TicketRequest;
 import com.pulsedesk.ticket.api.dto.TicketResponse;
@@ -15,10 +18,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -28,6 +35,9 @@ import static org.springframework.format.annotation.DateTimeFormat.ISO;
 @RequestMapping("/tickets")
 @RequiredArgsConstructor
 public class TicketController {
+
+    private static final MediaType CSV_MEDIA_TYPE =
+            new MediaType("text", "csv", StandardCharsets.UTF_8);
 
     private final TicketService ticketService;
     private final TicketAuditService ticketAuditService;
@@ -68,6 +78,38 @@ public class TicketController {
         );
     }
 
+    @GetMapping(value = "/export.csv", produces = "text/csv")
+    public ResponseEntity<String> exportTicketsCsv(
+            @RequestParam(required = false) TicketStatus status,
+            @RequestParam(required = false) TicketPriority priority,
+            @RequestParam(required = false) Long assigneeId,
+            @RequestParam(required = false) Long teamId,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdFrom,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = ISO.DATE_TIME) OffsetDateTime createdTo,
+            @PageableDefault(size = 20) Pageable pageable,
+            @AuthenticationPrincipal AuthPrincipal currentUser
+    ) {
+        String csv = ticketService.exportTicketsCsv(
+                currentUser,
+                status,
+                priority,
+                assigneeId,
+                teamId,
+                query,
+                createdFrom,
+                createdTo,
+                pageable
+        );
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"tickets.csv\"")
+                .contentType(CSV_MEDIA_TYPE)
+                .body(csv);
+    }
+
     @GetMapping("/{ticketId}")
     public TicketResponse getTicketById(
             @PathVariable Long ticketId,
@@ -92,6 +134,22 @@ public class TicketController {
             @AuthenticationPrincipal AuthPrincipal currentUser
     ) {
         return ticketService.transitionTicket(currentUser, ticketId, request.toStatus());
+    }
+
+    @PostMapping("/bulk/assign")
+    public BulkOperationResponse bulkAssign(
+            @Valid @RequestBody BulkAssignRequest request,
+            @AuthenticationPrincipal AuthPrincipal currentUser
+    ) {
+        return ticketService.bulkAssign(currentUser, request);
+    }
+
+    @PostMapping("/bulk/transition")
+    public BulkOperationResponse bulkTransition(
+            @Valid @RequestBody BulkTransitionRequest request,
+            @AuthenticationPrincipal AuthPrincipal currentUser
+    ) {
+        return ticketService.bulkTransition(currentUser, request);
     }
 
     @GetMapping("/{ticketId}/audit-logs")
